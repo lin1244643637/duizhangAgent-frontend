@@ -1,0 +1,23 @@
+x-frontend-image: &frontend_image ${FRONTEND_IMAGE:-duizhangagent-frontend:latest}
+x-frontend-service: &frontend_service
+  image: *frontend_image
+  build:
+    context: .
+    dockerfile: Dockerfile
+    args:
+      VITE_PUBLIC_BASE_PATH: ${VITE_PUBLIC_BASE_PATH:-/yuanji/}
+      VITE_ANALYTICS_DAILY_FACT_V2: ${VITE_ANALYTICS_DAILY_FACT_V2:-false}
+  environment:
+    TZ: Asia/Shanghai
+  restart: unless-stopped
+
+services:
+  frontend-blue:
+    <<: *frontend_service
+    ports:
+      - "${WEB_SLOT_BIND:-127.0.0.1}:${FRONTEND_BLUE_PORT:-18080}:80"
+
+  frontend-green:
+    <<: *frontend_service
+    ports:
+      - "${WEB_SLOT_BIND:-127.0.0.1}:${FRONTEND_GREEN_PORT:-18081}:80"

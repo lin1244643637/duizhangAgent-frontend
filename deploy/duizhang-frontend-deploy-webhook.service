@@ -1,0 +1,17 @@
+[Unit]
+Description=duizhangAgent frontend deploy webhook
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/duizhangAgent-frontend
+EnvironmentFile=/opt/duizhangAgent-frontend/.env.production
+ExecStart=/usr/bin/python3 /opt/duizhangAgent-frontend/deploy/webhook_server.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
