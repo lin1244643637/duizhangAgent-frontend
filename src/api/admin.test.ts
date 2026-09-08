@@ -1,0 +1,55 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { apiFetch } from './client';
+import { createRegistrationInvite, listRegistrationInvites } from './admin';
+
+vi.mock('./client', () => ({ apiFetch: vi.fn() }));
+
+function ok(body: unknown): Response {
+  return {
+    ok: true,
+    json: async () => body,
+  } as Response;
+}
+
+describe('admin invitations api', () => {
+  beforeEach(() => {
+    vi.mocked(apiFetch).mockReset();
+  });
+
+  it('lists tenant registration invite statuses', async () => {
+    vi.mocked(apiFetch).mockResolvedValue(ok({
+      items: [{
+        id: 'invite-1',
+        tenant_id: 'tenant-a',
+        role: 'member',
+        created_by: 'admin-a',
+        expires_at: '2026-08-26T12:00:00+08:00',
+        used_at: null,
+        used_by: null,
+        revoked_at: null,
+        status: 'active',
+        invite_token: 'AB12cd34EF',
+      }],
+    }));
+
+    const result = await listRegistrationInvites();
+
+    expect(apiFetch).toHaveBeenCalledWith('/api/v1/admin/users/invitations');
+    expect(result[0].status).toBe('active');
+    expect(result[0].invite_token).toBe('AB12cd34EF');
+  });
+
+  it('creates a registration invite with an explicit expiry', async () => {
+    vi.mocked(apiFetch).mockResolvedValue(ok({ invite_token: 'raw-token' }));
+
+    const result = await createRegistrationInvite(2880);
+
+    expect(apiFetch).toHaveBeenCalledWith('/api/v1/admin/users/invitations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expires_minutes: 2880 }),
+    });
+    expect(result.invite_token).toBe('raw-token');
+  });
+});

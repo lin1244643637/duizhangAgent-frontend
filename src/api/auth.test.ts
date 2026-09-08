@@ -1,0 +1,164 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import {
+  getAuthCapabilities,
+  getContactStatus,
+  loginWithPassword,
+  requestVerification,
+  updateContact,
+  type AuthCapabilities,
+} from './auth';
+import { useAuthStore } from '../store/authStore';
+
+describe('auth api', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    localStorage.clear();
+    useAuthStore.setState({
+      token: null,
+      username: '',
+      userId: '',
+      role: 'member',
+      tenantId: '',
+      isLoggedIn: false,
+    });
+  });
+
+  it('sends the explicit identifier login shape', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      token: 'token-1',
+      username: 'account-1',
+      user_id: 'user-1',
+      tenant_id: 'tenant-1',
+      role: 'member',
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await loginWithPassword('email', 'OPS@EXAMPLE.COM', 'secret-password');
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      identifier_type: 'email',
+      identifier: 'OPS@EXAMPLE.COM',
+      password: 'secret-password',
+      client_type: 'web',
+    });
+  });
+
+  it('maps stable backend errors and retry time', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      error_code: 'verification_rate_limited',
+      message: '操作过于频繁',
+      retry_after: 42,
+    }), { status: 429, headers: { 'Content-Type': 'application/json' } })));
+
+    await expect(requestVerification({
+      channel: 'sms',
+      purpose: 'login',
+      target: '13800138000',
+    })).rejects.toMatchObject({
+      message: '操作过于频繁',
+      code: 'verification_rate_limited',
+      retryAfter: 42,
+    });
+  });
+
+  it('uses a positive Retry-After header when a rate-limited response omits retry_after', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      message: '登录尝试次数过多',
+    }), {
+      status: 429,
+      headers: {
+        'Content-Type': 'application/json',
+        'Retry-After': '37',
+      },
+    })));
+
+    await expect(loginWithPassword('username', 'operator', 'wrong-password')).rejects.toMatchObject({
+      retryAfter: 37,
+    });
+  });
+
+  it('clears the current session when an authenticated contact request is unauthorized', async () => {
+    localStorage.setItem('auth_token', 'token-current');
+    useAuthStore.setState({
+      token: 'token-current',
+      username: 'operator',
+      userId: 'user-1',
+      role: 'member',
+      tenantId: 'tenant-1',
+      isLoggedIn: true,
+    });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      message: '登录已过期',
+    }), { status: 401, headers: { 'Content-Type': 'application/json' } })));
+
+    await expect(getContactStatus('token-current')).rejects.toMatchObject({
+      message: '登录已过期',
+    });
+
+    expect(useAuthStore.getState()).toMatchObject({ token: null, isLoggedIn: false });
+    expect(localStorage.getItem('auth_token')).toBeNull();
+  });
+
+  it('clears the current session when an authenticated contact update is unauthorized', async () => {
+    localStorage.setItem('auth_token', 'token-current');
+    useAuthStore.setState({
+      token: 'token-current',
+      username: 'operator',
+      userId: 'user-1',
+      role: 'member',
+      tenantId: 'tenant-1',
+      isLoggedIn: true,
+    });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      message: '登录已过期',
+    }), { status: 401, headers: { 'Content-Type': 'application/json' } })));
+
+    await expect(updateContact(
+      'bind',
+      'current-password',
+      'verification-token',
+      'token-current',
+    )).rejects.toMatchObject({ message: '登录已过期' });
+
+    expect(useAuthStore.getState()).toMatchObject({ token: null, isLoggedIn: false });
+    expect(localStorage.getItem('auth_token')).toBeNull();
+  });
+
+  it('does not clear an existing session for an unauthenticated login rejection', async () => {
+    localStorage.setItem('auth_token', 'token-current');
+    useAuthStore.setState({
+      token: 'token-current',
+      username: 'operator',
+      userId: 'user-1',
+      role: 'member',
+      tenantId: 'tenant-1',
+      isLoggedIn: true,
+    });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      message: '账号或密码错误',
+    }), { status: 401, headers: { 'Content-Type': 'application/json' } })));
+
+    await expect(loginWithPassword('email', 'ops@example.com', 'wrong-password')).rejects.toMatchObject({
+      message: '账号或密码错误',
+    });
+
+    expect(useAuthStore.getState()).toMatchObject({ token: 'token-current', isLoggedIn: true });
+    expect(localStorage.getItem('auth_token')).toBe('token-current');
+  });
+
+  it('exposes the complete authentication capability contract', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      verification_enabled: true,
+      code_login_enabled: true,
+      password_reset_enabled: true,
+      contact_management_enabled: true,
+      register_verification_required: true,
+      code_login_reveal_unknown_contact: false,
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+
+    const capabilities: AuthCapabilities = await getAuthCapabilities();
+
+    expect(capabilities.code_login_reveal_unknown_contact).toBe(false);
+  });
+});
