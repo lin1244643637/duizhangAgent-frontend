@@ -262,11 +262,6 @@ export async function updatePlatformUserRole(id: string, role: string): Promise<
   return res.json();
 }
 
-export async function resetPlatformUserPassword(id: string): Promise<{ new_password: string }> {
-  const res = await platformFetch(`/api/v1/platform/users/${encodeURIComponent(id)}/password`, { method: 'PATCH' });
-  return res.json();
-}
-
 export async function deletePlatformUser(id: string): Promise<void> {
   await platformFetch(`/api/v1/platform/users/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }

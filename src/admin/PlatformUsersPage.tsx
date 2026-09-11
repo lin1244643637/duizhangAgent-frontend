@@ -1,4 +1,4 @@
-import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
 import { Button, Input, Select, Table, type TableColumnsType } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import type { AdminTenant, AdminUser } from '../types';
@@ -10,7 +10,6 @@ import {
   deletePlatformUser,
   listPlatformTenants,
   listPlatformUsers,
-  resetPlatformUserPassword,
   updatePlatformUserRole,
 } from './adminApi';
 import { PlatformDetailDrawer } from './components/PlatformDetailDrawer';
@@ -134,17 +133,6 @@ export function PlatformUsersPage() {
     } catch (err) {
       showNotice(err instanceof Error ? err.message : '角色更新失败', 'error');
     }
-  }
-
-  function resetPassword(id: string) {
-    setConfirmDialog({
-      title: '重置密码',
-      message: '确定重置该用户密码？新密码仅在本次提示中展示。',
-      onConfirm: async () => {
-        const data = await resetPlatformUserPassword(id);
-        showNotice(`新密码: ${data.new_password}`, 'warning');
-      },
-    });
   }
 
   function removeUser(id: string) {
@@ -311,7 +299,6 @@ export function PlatformUsersPage() {
               />
             </label>
             <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-4">
-              <Button icon={<ReloadOutlined aria-hidden />} onClick={() => resetPassword(editingUser.id)}>重置密码</Button>
               <Button danger icon={<DeleteOutlined aria-hidden />} onClick={() => removeUser(editingUser.id)}>删除用户</Button>
             </div>
           </div>

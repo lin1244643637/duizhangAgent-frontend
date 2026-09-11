@@ -102,11 +102,6 @@ export async function updateUserRole(id: string, role: string): Promise<AdminUse
   return res.json();
 }
 
-export async function resetUserPassword(id: string): Promise<{ new_password: string }> {
-  const res = await apiFetch(`${ADMIN_USERS}/${id}/password`, { method: 'PATCH' });
-  return res.json();
-}
-
 export async function deleteUser(id: string): Promise<void> {
   await apiFetch(`${ADMIN_USERS}/${id}`, { method: 'DELETE' });
 }

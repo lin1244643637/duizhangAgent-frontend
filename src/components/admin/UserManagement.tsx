@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Input, Select, Table, type TableColumnsType } from 'antd';
 import type { AdminUser, AdminTenant } from '../../types';
-import { listUsers, createUser, updateUserRole, resetUserPassword, deleteUser } from '../../api/admin';
+import { listUsers, createUser, updateUserRole, deleteUser } from '../../api/admin';
 import { TableDisplayFrame } from '../TableDisplayFrame';
 import { formatBeijingTime } from '../../utils/time';
 import { ConfirmDialog } from '../ConfirmDialog';
@@ -71,15 +71,6 @@ export function UserManagement({ tenants }: UserManagementProps) {
     }
   }
 
-  async function handleResetPassword(id: string) {
-    try {
-      const data = await resetUserPassword(id);
-      showNotice('新密码: ' + data.new_password, 'warning');
-    } catch (e) {
-      showNotice(e instanceof Error ? e.message : '密码重置失败', 'error');
-    }
-  }
-
   async function handleDelete(id: string) {
     setConfirmDialog({
       title: '删除用户',
@@ -141,7 +132,6 @@ export function UserManagement({ tenants }: UserManagementProps) {
       render: (_, u) => (
         <div className="space-x-2">
           <Button autoInsertSpace={false} type="text" onClick={() => handleRoleChange(u)} className="h-auto border-0 p-0 text-xs text-blue-600 shadow-none hover:text-blue-800">{u.role === 'admin' ? '降为成员' : '升为管理员'}</Button>
-          <Button autoInsertSpace={false} type="text" onClick={() => handleResetPassword(u.id)} className="h-auto border-0 p-0 text-xs text-amber-600 shadow-none hover:text-amber-800">重置密码</Button>
           <Button autoInsertSpace={false} type="text" onClick={() => handleDelete(u.id)} className="h-auto border-0 p-0 text-xs text-red-600 shadow-none hover:text-red-800">删除</Button>
         </div>
       ),

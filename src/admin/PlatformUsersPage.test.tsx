@@ -5,7 +5,6 @@ import {
   deletePlatformUser,
   listPlatformTenants,
   listPlatformUsers,
-  resetPlatformUserPassword,
   updatePlatformUserRole,
 } from './adminApi';
 import { PlatformUsersPage } from './PlatformUsersPage';
@@ -15,7 +14,6 @@ vi.mock('./adminApi', () => ({
   deletePlatformUser: vi.fn(),
   listPlatformTenants: vi.fn(),
   listPlatformUsers: vi.fn(),
-  resetPlatformUserPassword: vi.fn(),
   updatePlatformUserRole: vi.fn(),
 }));
 
@@ -46,7 +44,6 @@ describe('PlatformUsersPage', () => {
     vi.mocked(listPlatformUsers).mockReset();
     vi.mocked(createPlatformUser).mockReset();
     vi.mocked(updatePlatformUserRole).mockReset();
-    vi.mocked(resetPlatformUserPassword).mockReset();
     vi.mocked(deletePlatformUser).mockReset();
     vi.mocked(listPlatformTenants).mockResolvedValue({ tenants: [tenant], total: 1 });
     vi.mocked(listPlatformUsers).mockResolvedValue({ users: [user], total: 1 });
@@ -61,5 +58,14 @@ describe('PlatformUsersPage', () => {
     const drawer = screen.getByRole('dialog');
     expect(drawer.textContent).toContain('新建用户');
     expect(within(drawer).getByText('角色')).toBeTruthy();
+  });
+
+  it('does not offer administrators a password reset action', async () => {
+    render(<PlatformUsersPage />);
+    await screen.findByText('operator1');
+
+    fireEvent.click(screen.getByRole('button', { name: '管理' }));
+
+    expect(screen.queryByRole('button', { name: '重置密码' })).toBeNull();
   });
 });
