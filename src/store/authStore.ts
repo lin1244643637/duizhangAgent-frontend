@@ -7,13 +7,20 @@ import {
 } from '../api/sessionLifecycle';
 import { apiUrl } from '../api/url';
 import {
+  getAccountState,
+  getWorkspaces,
   loginWithCode as requestCodeLogin,
   loginWithPassword as requestPasswordLogin,
   registerAccount,
+  registerPersonalAccount,
   resetAccountPassword,
+  setInitialAccountPassword,
+  switchActiveWorkspace,
   type AuthResponse,
   type IdentifierType,
   type Role,
+  type Workspace,
+  type WorkspaceType,
 } from '../api/auth';
 
 interface AuthState {
@@ -21,34 +28,42 @@ interface AuthState {
   username: string;
   userId: string;
   role: Role;
-  tenantId: string;
+  tenantId: string | null;
+  hasPassword: boolean;
+  workspaceType: WorkspaceType;
+  activeWorkspaceId: string;
+  workspaces: Workspace[];
+  workspaceLoading: boolean;
+  switchingWorkspaceId: string | null;
   isLoggedIn: boolean;
   hydrating: boolean;
   login: (username: string, password: string) => Promise<void>;
   loginWithPassword: (identifierType: IdentifierType, identifier: string, password: string) => Promise<void>;
   loginWithCode: (verificationToken: string) => Promise<void>;
   register: (username: string, password: string, inviteToken: string, verificationToken?: string) => Promise<void>;
+  registerPersonal: (verificationToken: string) => Promise<void>;
   resetPassword: (verificationToken: string, newPassword: string) => Promise<void>;
+  setInitialPassword: (newPassword: string) => Promise<void>;
   refreshAuth: (response: AuthResponse) => void;
   joinTenant: (tenantCode: string) => Promise<string>;
+  loadWorkspaceState: () => Promise<void>;
+  switchWorkspace: (workspaceId: string) => Promise<void>;
   restoreSession: () => Promise<void>;
   refreshSession: () => Promise<boolean>;
   logout: (options?: { remote?: boolean }) => Promise<void>;
 }
 
-const _storedRole = (localStorage.getItem('auth_role') as Role | null) ?? 'member';
 const _storedUsername = localStorage.getItem('auth_username') ?? '';
 const _storedUserId = localStorage.getItem('auth_user_id') ?? '';
-const _storedTenantId = localStorage.getItem('auth_tenant_id') ?? '';
 const _legacyToken = localStorage.getItem('auth_token');
 let _authGeneration = 0;
 
-function _persistAuth(role: Role, username: string, userId: string, tenantId: string) {
+function _persistAuth(username: string, userId: string) {
   localStorage.removeItem('auth_token');
-  localStorage.setItem('auth_role', role);
   localStorage.setItem('auth_username', username);
   localStorage.setItem('auth_user_id', userId);
-  localStorage.setItem('auth_tenant_id', tenantId);
+  localStorage.removeItem('auth_role');
+  localStorage.removeItem('auth_tenant_id');
 }
 
 function _clearPersistedAuth() {
@@ -64,8 +79,14 @@ function _loggedOutState(hydrating = false) {
     token: null,
     username: '',
     userId: '',
-    role: 'member' as Role,
-    tenantId: '',
+    role: 'personal' as Role,
+    tenantId: null,
+    hasPassword: false,
+    workspaceType: 'personal' as WorkspaceType,
+    activeWorkspaceId: 'personal',
+    workspaces: [],
+    workspaceLoading: false,
+    switchingWorkspaceId: null,
     isLoggedIn: false,
     hydrating,
   };
@@ -77,13 +98,16 @@ function _commitAuth(
   fallbackUsername = '',
 ) {
   const username = response.username || fallbackUsername;
-  _persistAuth(response.role, username, response.user_id, response.tenant_id);
+  _persistAuth(username, response.user_id);
   set({
     token: response.token,
     username,
     userId: response.user_id,
     role: response.role,
     tenantId: response.tenant_id,
+    hasPassword: response.has_password,
+    workspaceType: response.workspace_type,
+    activeWorkspaceId: response.active_workspace_id,
     isLoggedIn: true,
     hydrating: false,
   });
@@ -93,8 +117,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   token: _legacyToken,
   username: _storedUsername,
   userId: _storedUserId,
-  role: _storedRole,
-  tenantId: _storedTenantId,
+  role: 'personal',
+  tenantId: null,
+  hasPassword: false,
+  workspaceType: 'personal',
+  activeWorkspaceId: 'personal',
+  workspaces: [],
+  workspaceLoading: false,
+  switchingWorkspaceId: null,
   isLoggedIn: !!_legacyToken,
   hydrating: true,
 
@@ -126,8 +156,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     _commitAuth(set, response, username);
   },
 
+  registerPersonal: async (verificationToken) => {
+    const generation = ++_authGeneration;
+    const response = await registerPersonalAccount(verificationToken);
+    if (generation !== _authGeneration) return;
+    _commitAuth(set, response);
+  },
+
   resetPassword: async (verificationToken, newPassword) => {
     await resetAccountPassword(verificationToken, newPassword);
+  },
+
+  setInitialPassword: async (newPassword) => {
+    const token = get().token;
+    if (!token) throw new Error('登录已过期，请重新登录');
+    const result = await setInitialAccountPassword(newPassword, token);
+    set({ hasPassword: result.has_password });
   },
 
   refreshAuth: (response) => {
@@ -156,23 +200,64 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     return (data.message as string) ?? '申请已提交，等待管理员审批';
   },
 
+  loadWorkspaceState: async () => {
+    const token = get().token;
+    if (!token) return;
+    const generation = _authGeneration;
+    set({ workspaceLoading: true });
+    try {
+      const [account, workspaceList] = await Promise.all([
+        getAccountState(token),
+        getWorkspaces(token),
+      ]);
+      if (generation !== _authGeneration || get().token !== token) return;
+      set({
+        username: account.username,
+        userId: account.user_id,
+        role: account.role ?? 'personal',
+        tenantId: account.tenant_id,
+        hasPassword: account.has_password,
+        workspaceType: account.workspace_type,
+        activeWorkspaceId: account.active_workspace_id,
+        workspaces: workspaceList.items,
+      });
+      _persistAuth(account.username, account.user_id);
+    } finally {
+      if (generation === _authGeneration) set({ workspaceLoading: false });
+    }
+  },
+
+  switchWorkspace: async (workspaceId) => {
+    const state = get();
+    if (!state.token || workspaceId === state.activeWorkspaceId || state.switchingWorkspaceId) return;
+    const generation = _authGeneration;
+    set({ switchingWorkspaceId: workspaceId });
+    try {
+      const response = await switchActiveWorkspace(workspaceId, state.token);
+      if (generation !== _authGeneration) return;
+      _authGeneration += 1;
+      clearSessionState();
+      _commitAuth(set, response);
+      set({
+        workspaces: state.workspaces.map((workspace) => ({
+          ...workspace,
+          is_active: workspace.workspace_id === response.active_workspace_id,
+        })),
+      });
+      await get().loadWorkspaceState().catch(() => undefined);
+    } finally {
+      if (get().switchingWorkspaceId === workspaceId) set({ switchingWorkspaceId: null });
+    }
+  },
+
   restoreSession: async () => {
     const generation = ++_authGeneration;
     set({ hydrating: true });
     const refreshed = await refreshWebSession();
     if (generation !== _authGeneration) return;
     if (refreshed) {
-      const username = refreshed.username ?? localStorage.getItem('auth_username') ?? get().username;
-      _persistAuth(refreshed.role, username, refreshed.user_id, refreshed.tenant_id);
-      set({
-        token: refreshed.token,
-        username,
-        userId: refreshed.user_id,
-        role: refreshed.role,
-        tenantId: refreshed.tenant_id,
-        isLoggedIn: true,
-        hydrating: false,
-      });
+      const username = refreshed.username || localStorage.getItem('auth_username') || get().username;
+      _commitAuth(set, refreshed, username);
       return;
     }
     if (get().token) {
@@ -192,17 +277,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set(_loggedOutState(false));
       return false;
     }
-    const username = refreshed.username ?? localStorage.getItem('auth_username') ?? get().username;
-    _persistAuth(refreshed.role, username, refreshed.user_id, refreshed.tenant_id);
-    set({
-      token: refreshed.token,
-      username,
-      userId: refreshed.user_id,
-      role: refreshed.role,
-      tenantId: refreshed.tenant_id,
-      isLoggedIn: true,
-      hydrating: false,
-    });
+    const username = refreshed.username || localStorage.getItem('auth_username') || get().username;
+    if (get().activeWorkspaceId !== refreshed.active_workspace_id) clearSessionState();
+    _commitAuth(set, refreshed, username);
     return true;
   },
 

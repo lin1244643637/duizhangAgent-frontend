@@ -20,6 +20,7 @@ interface VerificationFieldsProps {
   authToken?: string | null;
   targetLabel?: string;
   showChannelSelector?: boolean;
+  beforeSend?: () => Promise<boolean>;
 }
 
 type VerificationInputChannel = VerificationChannel | 'auto';
@@ -35,6 +36,7 @@ export function VerificationFields({
   authToken,
   targetLabel,
   showChannelSelector = true,
+  beforeSend,
 }: VerificationFieldsProps) {
   const id = useId();
   const [challengeId, setChallengeId] = useState('');
@@ -81,6 +83,7 @@ export function VerificationFields({
     setSending(true);
     resetVerification();
     try {
+      if (beforeSend && !(await beforeSend())) return;
       const response = await requestVerification({
         channel: resolvedChannel,
         purpose,

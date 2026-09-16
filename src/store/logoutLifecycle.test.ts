@@ -19,6 +19,10 @@ describe('logout lifecycle', () => {
       userId: 'user-a',
       role: 'admin',
       tenantId: 'tenant-a',
+      hasPassword: true,
+      workspaceType: 'tenant',
+      activeWorkspaceId: 'tenant-a',
+      workspaces: [],
       isLoggedIn: true,
     });
     useChatStore.setState({
@@ -37,6 +41,9 @@ describe('logout lifecycle', () => {
       user_id: 'user-b',
       tenant_id: 'tenant-b',
       role: 'admin',
+      has_password: true,
+      workspace_type: 'tenant',
+      active_workspace_id: 'tenant-b',
       refresh_token: null,
     }), {
       status: 200,
@@ -137,6 +144,9 @@ describe('logout lifecycle', () => {
       user_id: 'user-a',
       tenant_id: 'tenant-a',
       role: 'admin',
+      has_password: true,
+      workspace_type: 'tenant',
+      active_workspace_id: 'tenant-a',
     });
     resolveRequest(new Response(null, { status: 401 }));
 

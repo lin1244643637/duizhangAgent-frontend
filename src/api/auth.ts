@@ -3,8 +3,9 @@ import { apiUrl } from './url';
 
 export type IdentifierType = 'username' | 'email' | 'phone';
 export type VerificationChannel = 'email' | 'sms';
-export type VerificationPurpose = 'register' | 'login' | 'reset_password' | 'bind_contact' | 'change_contact';
-export type Role = 'admin' | 'member';
+export type VerificationPurpose = 'register' | 'personal_register' | 'login' | 'reset_password' | 'bind_contact' | 'change_contact';
+export type Role = 'admin' | 'member' | 'personal';
+export type WorkspaceType = 'personal' | 'tenant';
 
 export interface AuthCapabilities {
   verification_enabled: boolean;
@@ -13,15 +14,50 @@ export interface AuthCapabilities {
   contact_management_enabled: boolean;
   register_verification_required: boolean;
   code_login_reveal_unknown_contact: boolean;
+  personal_registration_enabled: boolean;
 }
 
 export interface AuthResponse {
   token: string;
   username: string;
   user_id: string;
-  tenant_id: string;
+  tenant_id: string | null;
   role: Role;
+  has_password: boolean;
+  workspace_type: WorkspaceType;
+  active_workspace_id: string;
   refresh_token?: string | null;
+}
+
+export interface AccountState {
+  user_id: string;
+  username: string;
+  has_password: boolean;
+  workspace_type: WorkspaceType;
+  active_workspace_id: string;
+  active_workspace_available: boolean;
+  tenant_id: string | null;
+  role: Role | null;
+}
+
+export interface Workspace {
+  workspace_id: string;
+  workspace_type: WorkspaceType;
+  name: string;
+  tenant_id: string | null;
+  role: Role;
+  is_active: boolean;
+}
+
+export interface WorkspaceList {
+  active_workspace_id: string;
+  items: Workspace[];
+}
+
+export interface PhoneStatus {
+  is_registered: boolean;
+  has_password: boolean;
+  next_step: 'password' | 'verification' | 'personal_registration';
 }
 
 export interface VerificationRequest {
@@ -175,6 +211,42 @@ export function registerAccount(
       client_type: 'web',
     }),
   });
+}
+
+export function getPhoneStatus(phone: string): Promise<PhoneStatus> {
+  return authRequest<PhoneStatus>('/api/v1/auth/phone-status', {
+    method: 'POST',
+    body: JSON.stringify({ phone, country_code: '+86', client_type: 'web' }),
+  });
+}
+
+export function registerPersonalAccount(verificationToken: string): Promise<AuthResponse> {
+  return authRequest<AuthResponse>('/api/v1/auth/personal-register', {
+    method: 'POST',
+    body: JSON.stringify({ verification_token: verificationToken, client_type: 'web' }),
+  });
+}
+
+export function getAccountState(token: string): Promise<AccountState> {
+  return authRequest<AccountState>('/api/v1/auth/me', {}, token);
+}
+
+export function getWorkspaces(token: string): Promise<WorkspaceList> {
+  return authRequest<WorkspaceList>('/api/v1/auth/workspaces', {}, token);
+}
+
+export function switchActiveWorkspace(workspaceId: string, token: string): Promise<AuthResponse> {
+  return authRequest<AuthResponse>('/api/v1/auth/workspaces/switch', {
+    method: 'POST',
+    body: JSON.stringify({ workspace_id: workspaceId, client_type: 'web' }),
+  }, token);
+}
+
+export function setInitialAccountPassword(newPassword: string, token: string): Promise<{ message: string; has_password: boolean }> {
+  return authRequest('/api/v1/auth/password/initial', {
+    method: 'POST',
+    body: JSON.stringify({ new_password: newPassword }),
+  }, token);
 }
 
 export function requestVerification(

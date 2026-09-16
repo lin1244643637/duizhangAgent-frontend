@@ -51,6 +51,8 @@ export function ChatWindow() {
     onDuplicate: ({ period, existing_sources, onConfirm }) => setDupConfirm({ period, existing_sources, onConfirm }),
   });
   const role = useAuthStore((state) => state.role);
+  const workspaceType = useAuthStore((state) => state.workspaceType);
+  const isPersonal = workspaceType === 'personal';
   const [input, setInput] = useState('');
   const [showUpload, setShowUpload] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
@@ -99,7 +101,7 @@ export function ChatWindow() {
   const lastMessage = messages[messages.length - 1];
 
   useEffect(() => {
-    if (activeSessionId) {
+    if (activeSessionId && !isPersonal) {
       startPolling(CHAT_WINDOW_POLL_OWNER, {
         type: 'session',
         sessionId: activeSessionId,
@@ -107,7 +109,7 @@ export function ChatWindow() {
     } else {
       stopPolling(CHAT_WINDOW_POLL_OWNER);
     }
-  }, [activeSessionId, startPolling, stopPolling]);
+  }, [activeSessionId, isPersonal, startPolling, stopPolling]);
 
   useEffect(
     () => () => stopPolling(CHAT_WINDOW_POLL_OWNER),
@@ -187,7 +189,7 @@ export function ChatWindow() {
             : 'rounded-2xl border-slate-200 bg-white px-3 py-2 shadow-sm'
         }`}
       >
-        <Button
+        {!isPersonal && <Button
           htmlType="button"
           onClick={() => setShowUpload((v) => !v)}
           title="上传账单文件"
@@ -199,13 +201,13 @@ export function ChatWindow() {
           <svg className={isCenter ? 'w-5 h-5' : 'w-5 h-5'} viewBox="0 0 20 20" fill="currentColor">
             <path fillRule="evenodd" d="M8 4a3 3 0 00-3 3v4a5 5 0 0010 0V7a1 1 0 112 0v4a7 7 0 11-14 0V7a5 5 0 0110 0v4a3 3 0 11-6 0V7a1 1 0 012 0v4a1 1 0 102 0V7a3 3 0 00-3-3z" clipRule="evenodd" />
           </svg>
-        </Button>
+        </Button>}
 
         <TextArea
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={isCenter ? '向对账 Agent 提问' : '输入消息'}
+          placeholder={isCenter ? (isPersonal ? '咨询餐饮经营问题' : '向对账 Agent 提问') : '输入消息'}
           autoSize={{ minRows: 1, maxRows: MAX_ROWS }}
           className={`flex-1 bg-transparent resize-none self-center border-0 text-slate-800 shadow-none placeholder-slate-400 focus:outline-none focus:ring-0 ${
             isCenter ? 'text-base py-1' : 'text-sm'
@@ -306,10 +308,12 @@ export function ChatWindow() {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 11h.01M12 11h.01M15 11h.01M4 19h16a2 2 0 002-2V7a2 2 0 00-2-2H4a2 2 0 00-2 2v10a2 2 0 002 2z" />
                   </svg>
                 </div>
-                <h1 className="text-2xl font-semibold tracking-tight text-slate-800 md:text-3xl">你好，我是对账 Agent</h1>
+                <h1 className="text-2xl font-semibold tracking-tight text-slate-800 md:text-3xl">
+                  {isPersonal ? '你好，我是餐饮经营助手' : '你好，我是对账 Agent'}
+                </h1>
               </div>
 
-              {showUpload && (
+              {!isPersonal && showUpload && (
                 <div className="mb-3 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                   <FileUploadArea
                     files={pendingFiles}
@@ -432,7 +436,7 @@ export function ChatWindow() {
       )}
 
       {/* 文件上传区 */}
-      {showUpload && !isEmptySession && (
+      {!isPersonal && showUpload && !isEmptySession && (
         <FileUploadArea
           files={pendingFiles}
           onFilesChange={setPendingFiles}
@@ -447,7 +451,7 @@ export function ChatWindow() {
         </div>
       )}
 
-      {showExtract && activeSessionId && (
+      {!isPersonal && showExtract && activeSessionId && (
         <KnowledgeExtractDialog
           sessionId={activeSessionId}
           onClose={() => setShowExtract(false)}

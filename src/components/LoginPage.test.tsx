@@ -8,14 +8,17 @@ const authMocks = vi.hoisted(() => ({
   loginWithPassword: vi.fn(),
   loginWithCode: vi.fn(),
   register: vi.fn(),
+  registerPersonal: vi.fn(),
   resetPassword: vi.fn(),
   getAuthCapabilities: vi.fn(),
+  getPhoneStatus: vi.fn(),
   requestVerification: vi.fn(),
   confirmVerification: vi.fn(),
 }));
 
 vi.mock('../api/auth', () => ({
   getAuthCapabilities: authMocks.getAuthCapabilities,
+  getPhoneStatus: authMocks.getPhoneStatus,
   requestVerification: authMocks.requestVerification,
   confirmVerification: authMocks.confirmVerification,
 }));
@@ -26,6 +29,7 @@ vi.mock('../store/authStore', () => ({
     loginWithPassword: authMocks.loginWithPassword,
     loginWithCode: authMocks.loginWithCode,
     register: authMocks.register,
+    registerPersonal: authMocks.registerPersonal,
     resetPassword: authMocks.resetPassword,
   }),
 }));
@@ -36,10 +40,12 @@ describe('LoginPage', () => {
     authMocks.loginWithPassword.mockReset();
     authMocks.loginWithCode.mockReset();
     authMocks.register.mockReset();
+    authMocks.registerPersonal.mockReset();
     authMocks.resetPassword.mockReset();
     authMocks.requestVerification.mockReset();
     authMocks.confirmVerification.mockReset();
     authMocks.getAuthCapabilities.mockReset();
+    authMocks.getPhoneStatus.mockReset();
     authMocks.getAuthCapabilities.mockResolvedValue({
       verification_enabled: true,
       code_login_enabled: true,
@@ -47,6 +53,7 @@ describe('LoginPage', () => {
       contact_management_enabled: true,
       register_verification_required: true,
       code_login_reveal_unknown_contact: false,
+      personal_registration_enabled: false,
     });
     authMocks.requestVerification.mockResolvedValue({
       challenge_id: 'challenge-1',
@@ -57,6 +64,11 @@ describe('LoginPage', () => {
     authMocks.confirmVerification.mockResolvedValue({
       verification_token: 'verification-token',
       expires_in: 600,
+    });
+    authMocks.getPhoneStatus.mockResolvedValue({
+      is_registered: false,
+      has_password: false,
+      next_step: 'personal_registration',
     });
   });
 
@@ -190,7 +202,7 @@ describe('LoginPage', () => {
     fireEvent.change(screen.getByPlaceholderText('请输入用户名'), { target: { value: 'newuser' } });
     fireEvent.change(screen.getByPlaceholderText('请输入密码'), { target: { value: 'secret-password' } });
     fireEvent.change(screen.getByPlaceholderText('再次输入密码'), { target: { value: 'different' } });
-    fireEvent.click(screen.getByText('注册'));
+    fireEvent.click(screen.getByRole('button', { name: '注册并加入租户' }));
 
     expect(await screen.findByText('两次密码不一致')).toBeTruthy();
     expect(authMocks.register).not.toHaveBeenCalled();
@@ -204,6 +216,7 @@ describe('LoginPage', () => {
       contact_management_enabled: true,
       register_verification_required: false,
       code_login_reveal_unknown_contact: false,
+      personal_registration_enabled: false,
     });
     authMocks.register.mockResolvedValue(undefined);
     render(<LoginPage />);
@@ -215,9 +228,67 @@ describe('LoginPage', () => {
     fireEvent.change(screen.getByPlaceholderText('再次输入密码'), { target: { value: 'abc1234' } });
     expect(screen.getByText('密码强度：一般')).toBeTruthy();
     expect(screen.getByText('大于 6 位，最多 16 位')).toBeTruthy();
-    fireEvent.click(screen.getByText('注册'));
+    fireEvent.click(screen.getByRole('button', { name: '注册并加入租户' }));
 
     await waitFor(() => expect(authMocks.register).toHaveBeenCalledWith('newuser', 'abc1234', 'invite-token', ''));
+  });
+
+  it('checks the phone before personal registration and signs in after verification', async () => {
+    authMocks.getAuthCapabilities.mockResolvedValue({
+      verification_enabled: true,
+      code_login_enabled: true,
+      password_reset_enabled: true,
+      contact_management_enabled: true,
+      register_verification_required: true,
+      code_login_reveal_unknown_contact: false,
+      personal_registration_enabled: true,
+    });
+    authMocks.registerPersonal.mockResolvedValue(undefined);
+    render(<LoginPage />);
+
+    fireEvent.click(await screen.findByText('没有账号？立即注册'));
+    fireEvent.change(await screen.findByLabelText('手机号'), { target: { value: '13800138000' } });
+    fireEvent.click(screen.getByRole('button', { name: '获取验证码' }));
+
+    await waitFor(() => expect(authMocks.getPhoneStatus).toHaveBeenCalledWith('13800138000'));
+    expect(authMocks.requestVerification).toHaveBeenCalledWith({
+      channel: 'sms',
+      purpose: 'personal_register',
+      target: '13800138000',
+    }, undefined);
+
+    fireEvent.change(await screen.findByLabelText('验证码'), { target: { value: '123456' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认验证码' }));
+    await waitFor(() => expect(authMocks.confirmVerification).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: '创建个人账号' }));
+
+    await waitFor(() => expect(authMocks.registerPersonal).toHaveBeenCalledWith('verification-token'));
+  });
+
+  it('redirects an existing phone to login without sending a registration code', async () => {
+    authMocks.getAuthCapabilities.mockResolvedValue({
+      verification_enabled: true,
+      code_login_enabled: true,
+      password_reset_enabled: true,
+      contact_management_enabled: true,
+      register_verification_required: true,
+      code_login_reveal_unknown_contact: false,
+      personal_registration_enabled: true,
+    });
+    authMocks.getPhoneStatus.mockResolvedValue({
+      is_registered: true,
+      has_password: true,
+      next_step: 'password',
+    });
+    render(<LoginPage />);
+
+    fireEvent.click(await screen.findByText('没有账号？立即注册'));
+    fireEvent.change(await screen.findByLabelText('手机号'), { target: { value: '13800138000' } });
+    fireEvent.click(screen.getByRole('button', { name: '获取验证码' }));
+
+    await waitFor(() => expect(screen.getByPlaceholderText('请输入密码')).toBeTruthy());
+    expect((screen.getByLabelText('账号') as HTMLInputElement).value).toBe('13800138000');
+    expect(authMocks.requestVerification).not.toHaveBeenCalled();
   });
 
   it('resets password only after verification and returns to password login', async () => {

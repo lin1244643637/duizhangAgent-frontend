@@ -18,7 +18,20 @@ import { VerificationFields } from './auth/VerificationFields';
 type ContactMode = 'bind' | 'change';
 
 export function ProfileSettings() {
-  const { username, role, tenantId, token, joinTenant, logout, refreshAuth } = useAuthStore();
+  const {
+    username,
+    role,
+    tenantId,
+    token,
+    hasPassword,
+    workspaceType,
+    activeWorkspaceId,
+    workspaces,
+    joinTenant,
+    setInitialPassword,
+    logout,
+    refreshAuth,
+  } = useAuthStore();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -35,7 +48,7 @@ export function ProfileSettings() {
   const [contactSaving, setContactSaving] = useState(false);
 
   useEffect(() => {
-    if (!token) return;
+    if (!token || workspaceType !== 'tenant') return;
     let active = true;
     getAuthCapabilities()
       .then((value) => {
@@ -58,7 +71,7 @@ export function ProfileSettings() {
     return () => {
       active = false;
     };
-  }, [token]);
+  }, [token, workspaceType]);
 
   async function handleChangePassword(event: React.FormEvent) {
     event.preventDefault();
@@ -73,17 +86,24 @@ export function ProfileSettings() {
 
     setLoading(true);
     try {
-      const response = await apiFetch('/api/v1/auth/change-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ old_password: currentPassword, new_password: newPassword }),
-      });
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.message ?? data.detail ?? '修改失败');
+      if (!hasPassword) {
+        await setInitialPassword(newPassword);
+        setNewPassword('');
+        setConfirmPassword('');
+        notification.success({ title: '登录密码设置成功', duration: 5, closable: true });
+      } else {
+        const response = await apiFetch('/api/v1/auth/change-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ old_password: currentPassword, new_password: newPassword }),
+        });
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.message ?? data.detail ?? '修改失败');
+        }
+        notification.success({ title: '密码修改成功，请重新登录', duration: 5, closable: true });
+        void logout();
       }
-      notification.success({ title: '密码修改成功，请重新登录', duration: 5, closable: true });
-      logout();
     } catch (error) {
       notification.error({
         title: error instanceof Error ? error.message : '密码修改失败',
@@ -162,6 +182,8 @@ export function ProfileSettings() {
   const initial = username ? username[0].toUpperCase() : 'U';
   const contactTitle = contactMode === 'bind' ? '绑定' : '更换';
   const contactName = contactChannel === 'sms' ? '手机号' : '邮箱';
+  const activeWorkspaceName = workspaces?.find((item) => item.workspace_id === activeWorkspaceId)?.name
+    ?? (workspaceType === 'personal' ? '个人空间' : tenantId ?? '租户空间');
 
   return (
     <div className="flex-1 overflow-y-auto bg-slate-50 p-3 pb-4 md:p-6">
@@ -174,13 +196,13 @@ export function ProfileSettings() {
             </div>
             <div>
               <p className="text-sm font-medium text-slate-700">{username}</p>
-              <p className="text-xs text-slate-400">{role === 'admin' ? '管理员' : '成员'}</p>
-              {tenantId && <p className="mt-0.5 text-xs text-slate-400">当前租户：{tenantId}</p>}
+              <p className="text-xs text-slate-400">{workspaceRoleLabel(role)}</p>
+              <p className="mt-0.5 text-xs text-slate-400">当前工作空间：{activeWorkspaceName}</p>
             </div>
           </div>
         </section>
 
-        <section className="rounded-lg border border-slate-200 bg-white p-4 md:p-6">
+        {workspaceType === 'tenant' && <section className="rounded-lg border border-slate-200 bg-white p-4 md:p-6">
           <h2 className="mb-4 text-base font-semibold text-slate-800">登录联系方式</h2>
           <div className="divide-y divide-slate-100">
             <ContactRow
@@ -200,9 +222,9 @@ export function ProfileSettings() {
               onAction={() => openContact('sms', Boolean(contacts?.phone.bound))}
             />
           </div>
-        </section>
+        </section>}
 
-        <PreferencesPanel />
+        {workspaceType === 'tenant' && <PreferencesPanel />}
 
         <section className="rounded-lg border border-slate-200 bg-white p-4 md:p-6">
           <h2 className="mb-2 text-base font-semibold text-slate-800">申请加入租户</h2>
@@ -221,9 +243,10 @@ export function ProfileSettings() {
         </section>
 
         <section className="rounded-lg border border-slate-200 bg-white p-4 md:p-6">
-          <h2 className="mb-4 text-base font-semibold text-slate-800">修改密码</h2>
+          <h2 className="mb-1 text-base font-semibold text-slate-800">{hasPassword ? '修改密码' : '设置登录密码'}</h2>
+          {!hasPassword && <p className="mb-4 text-sm text-slate-500">设置后可使用手机号和密码登录。</p>}
           <form onSubmit={handleChangePassword} className="space-y-3">
-            <label className="block text-sm text-slate-500">
+            {hasPassword && <label className="block text-sm text-slate-500">
               当前密码
               <Input.Password
                 aria-label="修改密码的当前密码"
@@ -233,7 +256,7 @@ export function ProfileSettings() {
                 className={inputClass}
                 autoComplete="current-password"
               />
-            </label>
+            </label>}
             <label className="block text-sm text-slate-500">
               新密码
               <Input.Password
@@ -257,7 +280,7 @@ export function ProfileSettings() {
                 autoComplete="new-password"
               />
             </label>
-            <Button type="primary" htmlType="submit" loading={loading}>修改密码</Button>
+            <Button type="primary" htmlType="submit" loading={loading}>{hasPassword ? '修改密码' : '设置密码'}</Button>
           </form>
         </section>
 
@@ -313,6 +336,12 @@ export function ProfileSettings() {
       </Modal>
     </div>
   );
+}
+
+function workspaceRoleLabel(role: 'admin' | 'member' | 'personal'): string {
+  if (role === 'admin') return '管理员';
+  if (role === 'member') return '成员';
+  return '个人空间';
 }
 
 function ContactRow({

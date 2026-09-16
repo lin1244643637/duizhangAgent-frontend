@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
-import { Button } from 'antd';
+import { Button, notification } from 'antd';
 import { useChatStore } from '../store/chatStore';
 import { useAuthStore } from '../store/authStore';
 import { useUiStore } from '../store/uiStore';
@@ -48,7 +48,17 @@ function SidebarIconButton({
 }
 
 function UserMenu() {
-  const { username, role, logout } = useAuthStore();
+  const {
+    username,
+    role,
+    hasPassword,
+    workspaceType,
+    activeWorkspaceId,
+    workspaces,
+    switchingWorkspaceId,
+    switchWorkspace,
+    logout,
+  } = useAuthStore();
   const { route, navigate, closeUserMenu } = useUiStore();
   const menuRef = useRef<HTMLDivElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -75,6 +85,19 @@ function UserMenu() {
     logout();
   }
 
+  async function handleWorkspaceSwitch(workspaceId: string) {
+    try {
+      await switchWorkspace(workspaceId);
+      setMenuOpen(false);
+    } catch (error) {
+      notification.error({
+        title: error instanceof Error ? error.message : '工作空间切换失败',
+        duration: 5,
+        closable: true,
+      });
+    }
+  }
+
   // Get first char of username for avatar initial
   const initial = username ? username[0].toUpperCase() : 'U';
 
@@ -89,7 +112,7 @@ function UserMenu() {
         </div>
         <div className="flex-1 text-left min-w-0">
           <p className="text-sm font-medium text-slate-700 truncate">{username || '用户'}</p>
-          <p className="text-[10px] text-slate-400">{role === 'admin' ? '管理员' : '成员'}</p>
+          <p className="text-[10px] text-slate-400">{workspaceRoleLabel(role)}</p>
         </div>
         <svg className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
           <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
@@ -100,7 +123,29 @@ function UserMenu() {
         <div className="absolute bottom-full left-2 right-2 mb-1 bg-white rounded-xl shadow-lg border border-slate-200 py-1 z-50">
           <div className="px-3 pt-1 pb-2 border-b border-slate-100">
             <p className="text-sm font-medium text-slate-700">{username}</p>
-            <p className="text-xs text-slate-400">{role === 'admin' ? '管理员' : '成员'}</p>
+            <p className="text-xs text-slate-400">{workspaceRoleLabel(role)}</p>
+            {!hasPassword && <p className="mt-0.5 text-xs text-amber-600">待设置登录密码</p>}
+          </div>
+
+          <div className="border-b border-slate-100 py-1">
+            <p className="px-3 py-1 text-[10px] font-semibold text-slate-400">工作空间</p>
+            {workspaces.map((workspace) => (
+              <Button
+                key={workspace.workspace_id}
+                htmlType="button"
+                disabled={Boolean(switchingWorkspaceId)}
+                loading={switchingWorkspaceId === workspace.workspace_id}
+                onClick={() => void handleWorkspaceSwitch(workspace.workspace_id)}
+                className={`h-10 w-full justify-start border-0 px-3 text-left text-xs shadow-none ${
+                  workspace.workspace_id === activeWorkspaceId
+                    ? 'bg-blue-50 font-medium text-blue-700'
+                    : 'text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <span className="truncate">{workspace.name}</span>
+                {workspace.workspace_id === activeWorkspaceId && <span className="ml-auto text-[10px]">当前</span>}
+              </Button>
+            ))}
           </div>
 
           <Button
@@ -114,7 +159,7 @@ function UserMenu() {
             个人设置
           </Button>
 
-          {role === 'admin' && (
+          {workspaceType === 'tenant' && role === 'admin' && (
             <Button
               onClick={() => handleNav('admin')}
               className="h-auto w-full flex items-center gap-2.5 border-0 px-3 py-2.5 text-sm text-slate-600 shadow-none hover:bg-slate-50 transition-colors cursor-pointer"
@@ -147,8 +192,9 @@ function UserMenu() {
 export function Sidebar() {
   const { sessions, activeSessionId, setActiveSession, resetToNewSession, deleteSession } = useChatStore();
   const { navigate, route, sidebarCollapsed, toggleSidebarCollapsed } = useUiStore();
-  const { role, username } = useAuthStore();
+  const { role, username, workspaceType } = useAuthStore();
   const isAdmin = role === 'admin';
+  const isTenantWorkspace = workspaceType === 'tenant';
   const collapsedChatRef = useRef<HTMLDivElement>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -312,19 +358,19 @@ export function Sidebar() {
                 </div>
               )}
             </div>
-            <SidebarIconButton label="任务" active={isTasks} onClick={() => navigate('tasks')}>
+            {isTenantWorkspace && <SidebarIconButton label="任务" active={isTasks} onClick={() => navigate('tasks')}>
               {taskIcon}
-            </SidebarIconButton>
-            {isAdmin && (
+            </SidebarIconButton>}
+            {isTenantWorkspace && isAdmin && (
               <SidebarIconButton label="知识库" active={isKb} onClick={() => navigate('kb')}>
                 {kbIcon}
               </SidebarIconButton>
             )}
-            <SidebarIconButton label="经营分析" active={isAnalytics} onClick={() => navigate('analytics')}>
+            {isTenantWorkspace && <SidebarIconButton label="经营分析" active={isAnalytics} onClick={() => navigate('analytics')}>
               <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 3v18h18M9 17V9m4 8V5m4 12v-6" />
               </svg>
-            </SidebarIconButton>
+            </SidebarIconButton>}
           </div>
 
           <div className="p-2 border-t border-slate-200 flex justify-center">
@@ -385,7 +431,7 @@ export function Sidebar() {
                 </span>
                 <span>对话</span>
               </Button>
-              <Button
+              {isTenantWorkspace && <Button
                 onClick={() => navigate('tasks')}
                 className={`group flex h-11 w-full box-border items-center gap-2.5 rounded-xl border-0 px-3 py-2 text-left text-xs font-medium leading-none shadow-none transition-colors cursor-pointer ${
                   isTasks ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:bg-white/70 hover:text-slate-700'
@@ -397,8 +443,8 @@ export function Sidebar() {
                   {taskIcon}
                 </span>
                 <span>任务</span>
-              </Button>
-              {isAdmin && (
+              </Button>}
+              {isTenantWorkspace && isAdmin && (
                 <Button
                   onClick={() => navigate('kb')}
                   className={`group flex h-11 w-full box-border items-center gap-2.5 rounded-xl border-0 px-3 py-2 text-left text-xs font-medium leading-none shadow-none transition-colors cursor-pointer ${
@@ -413,7 +459,7 @@ export function Sidebar() {
                   <span>知识库</span>
                 </Button>
               )}
-              <Button
+              {isTenantWorkspace && <Button
                 onClick={() => navigate('analytics')}
                 className={`group flex h-11 w-full box-border items-center gap-2.5 rounded-xl border-0 px-3 py-2 text-left text-xs font-medium leading-none shadow-none transition-colors cursor-pointer ${
                   isAnalytics ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:bg-white/70 hover:text-slate-700'
@@ -425,7 +471,7 @@ export function Sidebar() {
                   {analyticsIcon}
                 </span>
                 <span>经营分析</span>
-              </Button>
+              </Button>}
             </div>
           </div>
         </div>
@@ -498,7 +544,7 @@ export function Sidebar() {
         </div>
       )}
 
-      {isTasks && <TaskListPanel />}
+      {isTenantWorkspace && isTasks && <TaskListPanel />}
 
       {isAnalytics && <div className="flex-1" />}
 
@@ -531,4 +577,10 @@ export function Sidebar() {
       )}
     </aside>
   );
+}
+
+function workspaceRoleLabel(role: 'admin' | 'member' | 'personal'): string {
+  if (role === 'admin') return '管理员';
+  if (role === 'member') return '成员';
+  return '个人空间';
 }

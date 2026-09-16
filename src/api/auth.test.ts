@@ -2,9 +2,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   getAuthCapabilities,
+  getAccountState,
   getContactStatus,
+  getPhoneStatus,
+  getWorkspaces,
   loginWithPassword,
+  registerPersonalAccount,
   requestVerification,
+  setInitialAccountPassword,
+  switchActiveWorkspace,
   updateContact,
   type AuthCapabilities,
 } from './auth';
@@ -19,7 +25,11 @@ describe('auth api', () => {
       username: '',
       userId: '',
       role: 'member',
-      tenantId: '',
+      tenantId: null,
+      hasPassword: false,
+      workspaceType: 'personal',
+      activeWorkspaceId: 'personal',
+      workspaces: [],
       isLoggedIn: false,
     });
   });
@@ -155,10 +165,61 @@ describe('auth api', () => {
       contact_management_enabled: true,
       register_verification_required: true,
       code_login_reveal_unknown_contact: false,
+      personal_registration_enabled: true,
     }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
 
     const capabilities: AuthCapabilities = await getAuthCapabilities();
 
     expect(capabilities.code_login_reveal_unknown_contact).toBe(false);
+    expect(capabilities.personal_registration_enabled).toBe(true);
+  });
+
+  it('uses the public personal registration contract', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        is_registered: false, has_password: false, next_step: 'personal_registration',
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await getPhoneStatus('13800138000');
+    await registerPersonalAccount('verification-token');
+
+    expect(fetchMock.mock.calls[0][0]).toContain('/api/v1/auth/phone-status');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      phone: '13800138000', country_code: '+86', client_type: 'web',
+    });
+    expect(fetchMock.mock.calls[1][0]).toContain('/api/v1/auth/personal-register');
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
+      verification_token: 'verification-token', client_type: 'web',
+    });
+  });
+
+  it('uses authenticated workspace and initial-password contracts', async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({}), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await getAccountState('access-token');
+    await getWorkspaces('access-token');
+    await switchActiveWorkspace('tenant-2', 'access-token');
+    await setInitialAccountPassword('secret123', 'access-token');
+
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      expect.stringContaining('/api/v1/auth/me'),
+      expect.stringContaining('/api/v1/auth/workspaces'),
+      expect.stringContaining('/api/v1/auth/workspaces/switch'),
+      expect.stringContaining('/api/v1/auth/password/initial'),
+    ]);
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({
+      workspace_id: 'tenant-2', client_type: 'web',
+    });
+    expect(JSON.parse(fetchMock.mock.calls[3][1].body)).toEqual({ new_password: 'secret123' });
+    for (const call of fetchMock.mock.calls) {
+      expect(new Headers(call[1].headers).get('Authorization')).toBe('Bearer access-token');
+    }
   });
 });

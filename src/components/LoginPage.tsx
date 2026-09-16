@@ -1,13 +1,20 @@
 import { useEffect, useState } from 'react';
 import { Button, ConfigProvider, Input, Tabs, notification } from 'antd';
 
-import { getAuthCapabilities, type AuthCapabilities, type IdentifierType, type VerificationChannel } from '../api/auth';
+import {
+  getAuthCapabilities,
+  getPhoneStatus,
+  type AuthCapabilities,
+  type IdentifierType,
+  type VerificationChannel,
+} from '../api/auth';
 import { useAuthStore } from '../store/authStore';
 import { PasswordStrengthHint } from './auth/PasswordStrengthHint';
 import { isPasswordLengthValid } from './auth/passwordPolicy';
 import { VerificationFields } from './auth/VerificationFields';
 
 type PageMode = 'login' | 'register' | 'reset';
+type RegisterMode = 'personal' | 'invite';
 
 const unavailableCapabilities: AuthCapabilities = {
   verification_enabled: false,
@@ -16,13 +23,15 @@ const unavailableCapabilities: AuthCapabilities = {
   contact_management_enabled: false,
   register_verification_required: false,
   code_login_reveal_unknown_contact: false,
+  personal_registration_enabled: false,
 };
 
 export function LoginPage() {
-  const { loginWithPassword, loginWithCode, register, resetPassword } = useAuthStore();
+  const { loginWithPassword, loginWithCode, register, registerPersonal, resetPassword } = useAuthStore();
   const [capabilities, setCapabilities] = useState(unavailableCapabilities);
   const [mode, setMode] = useState<PageMode>('login');
   const [loginTab, setLoginTab] = useState<'password' | 'code'>('password');
+  const [registerMode, setRegisterMode] = useState<RegisterMode>('personal');
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -67,6 +76,7 @@ export function LoginPage() {
   function switchMode(next: PageMode) {
     resetForm();
     setLoginTab('password');
+    setRegisterMode(capabilities.personal_registration_enabled ? 'personal' : 'invite');
     setMode(next);
   }
 
@@ -146,6 +156,38 @@ export function LoginPage() {
       await register(identifier.trim(), password, inviteToken.trim(), verificationToken);
     } catch (error) {
       showError(error, '注册失败');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function checkPersonalPhone(): Promise<boolean> {
+    const status = await getPhoneStatus(target.trim());
+    if (!status.is_registered) return true;
+    setMode('login');
+    setVerificationToken('');
+    if (status.has_password) {
+      setIdentifier(target.trim());
+      setLoginTab('password');
+      notice.info({ title: '该手机号已注册，请输入密码登录', duration: 5, closable: true });
+    } else {
+      setLoginTab('code');
+      notice.info({ title: '该手机号已注册，请使用验证码登录', duration: 5, closable: true });
+    }
+    return false;
+  }
+
+  async function handlePersonalRegister(event: React.FormEvent) {
+    event.preventDefault();
+    if (!verificationToken) {
+      notice.warning({ title: '请先完成手机号验证', duration: 5, closable: true });
+      return;
+    }
+    setLoading(true);
+    try {
+      await registerPersonal(verificationToken);
+    } catch (error) {
+      showError(error, '个人账号注册失败');
     } finally {
       setLoading(false);
     }
@@ -259,41 +301,75 @@ export function LoginPage() {
           )}
 
           {mode === 'register' && (
-            <form onSubmit={handleRegister} className="space-y-4">
-              <h2 className="text-base font-semibold text-slate-800">邀请注册</h2>
-              <p className="text-xs leading-5 text-slate-500">请输入管理员在「用户管理」生成的注册邀请码。租户加入码不能用于注册。</p>
-              <Input
-                aria-label="注册邀请码"
-                value={inviteToken}
-                onChange={(event) => {
-                  setInviteToken(event.target.value);
-                  setVerificationToken('');
+            <div>
+              <h2 className="mb-3 text-base font-semibold text-slate-800">创建账号</h2>
+              <Tabs
+                activeKey={registerMode}
+                onChange={(key) => {
+                  resetForm();
+                  setRegisterMode(key as RegisterMode);
                 }}
-                placeholder="请输入注册邀请码"
-              />
-              <Input
-                aria-label="用户名"
-                value={identifier}
-                onChange={(event) => setIdentifier(event.target.value)}
-                placeholder="请输入用户名"
-                autoComplete="username"
-              />
-              <Input.Password
-                aria-label="密码"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="请输入密码"
-                autoComplete="new-password"
-              />
-              <PasswordStrengthHint password={password} />
-              <Input.Password
-                aria-label="确认密码"
-                value={confirmPassword}
-                onChange={(event) => setConfirmPassword(event.target.value)}
-                placeholder="再次输入密码"
-                autoComplete="new-password"
-              />
-              {capabilities.register_verification_required && (
+                items={[
+                  ...(capabilities.personal_registration_enabled ? [{
+                    key: 'personal',
+                    label: '手机号注册',
+                    children: (
+                      <form onSubmit={handlePersonalRegister} className="space-y-4 pt-1">
+                        <p className="text-xs leading-5 text-slate-500">验证手机号后直接进入餐饮经营基础聊天，密码可稍后设置。</p>
+                        <VerificationFields
+                          channel="sms"
+                          target={target}
+                          onTargetChange={setTarget}
+                          purpose="personal_register"
+                          targetLabel="手机号"
+                          showChannelSelector={false}
+                          beforeSend={checkPersonalPhone}
+                          onVerified={setVerificationToken}
+                        />
+                        <Button type="primary" htmlType="submit" block loading={loading} disabled={!verificationToken}>
+                          创建个人账号
+                        </Button>
+                      </form>
+                    ),
+                  }] : []),
+                  {
+                    key: 'invite',
+                    label: '邀请码注册',
+                    children: (
+                      <form onSubmit={handleRegister} className="space-y-4 pt-1">
+                        <p className="text-xs leading-5 text-slate-500">请输入管理员在「用户管理」生成的注册邀请码。租户加入码不能用于注册。</p>
+                        <Input
+                          aria-label="注册邀请码"
+                          value={inviteToken}
+                          onChange={(event) => {
+                            setInviteToken(event.target.value);
+                            setVerificationToken('');
+                          }}
+                          placeholder="请输入注册邀请码"
+                        />
+                        <Input
+                          aria-label="用户名"
+                          value={identifier}
+                          onChange={(event) => setIdentifier(event.target.value)}
+                          placeholder="请输入用户名"
+                          autoComplete="username"
+                        />
+                        <Input.Password
+                          aria-label="密码"
+                          value={password}
+                          onChange={(event) => setPassword(event.target.value)}
+                          placeholder="请输入密码"
+                          autoComplete="new-password"
+                        />
+                        <PasswordStrengthHint password={password} />
+                        <Input.Password
+                          aria-label="确认密码"
+                          value={confirmPassword}
+                          onChange={(event) => setConfirmPassword(event.target.value)}
+                          placeholder="再次输入密码"
+                          autoComplete="new-password"
+                        />
+                        {capabilities.register_verification_required && (
                 <VerificationFields
                   channel={channel}
                   onChannelChange={(value) => {
@@ -308,12 +384,17 @@ export function LoginPage() {
                   targetLabel="邮箱或手机号"
                   onVerified={setVerificationToken}
                 />
-              )}
-              <Button type="primary" htmlType="submit" block loading={loading}>注册</Button>
+                        )}
+                        <Button type="primary" htmlType="submit" block loading={loading}>注册并加入租户</Button>
+                      </form>
+                    ),
+                  },
+                ]}
+              />
               <Button type="link" htmlType="button" block onClick={() => switchMode('login')}>
                 已有账号？返回登录
               </Button>
-            </form>
+            </div>
           )}
 
           {mode === 'reset' && (

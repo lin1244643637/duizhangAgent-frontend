@@ -1,15 +1,5 @@
 import { apiUrl } from './url';
-
-export type AuthRole = 'admin' | 'member';
-
-export interface AuthResponse {
-  token: string;
-  username?: string;
-  user_id: string;
-  tenant_id: string;
-  role: AuthRole;
-  refresh_token?: string | null;
-}
+import type { AuthResponse } from './auth';
 
 const REFRESH_THRESHOLD_MS = 6 * 60 * 60 * 1000;
 let refreshPromise: Promise<AuthResponse | null> | null = null;

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { useState } from 'react';
-import { NavBar, Popup, SafeArea, TabBar } from 'antd-mobile';
+import { NavBar, Popup, SafeArea, TabBar, Toast } from 'antd-mobile';
 import { useAuthStore } from '../../store/authStore';
 import { type AppRoute, useUiStore } from '../../store/uiStore';
 
@@ -124,9 +124,19 @@ function activeMobileTab(route: AppRoute, isAdmin: boolean): MobileTabKey {
 
 export function MobileLayout({ children }: { children: ReactNode }) {
   const { route, navigate } = useUiStore();
-  const { role, username, logout } = useAuthStore();
+  const {
+    role,
+    username,
+    workspaceType,
+    activeWorkspaceId,
+    workspaces,
+    switchingWorkspaceId,
+    switchWorkspace,
+    logout,
+  } = useAuthStore();
   const [moreOpen, setMoreOpen] = useState(false);
   const isAdmin = role === 'admin';
+  const isTenantWorkspace = workspaceType === 'tenant';
   const activeKey = activeMobileTab(route, isAdmin);
 
   function go(nextRoute: AppRoute) {
@@ -142,9 +152,20 @@ export function MobileLayout({ children }: { children: ReactNode }) {
     go(key as AppRoute);
   }
 
+  async function changeWorkspace(workspaceId: string) {
+    try {
+      await switchWorkspace(workspaceId);
+      setMoreOpen(false);
+    } catch (error) {
+      Toast.show({ content: error instanceof Error ? error.message : '工作空间切换失败' });
+    }
+  }
+
   const moreItems: MoreItem[] = [
-    { label: '连接器设置', description: '配置钉钉、食亨等数据源', route: 'connectors', icon: menuIcon('connectors') },
-    ...(isAdmin ? [
+    ...(isTenantWorkspace ? [
+      { label: '连接器设置', description: '配置钉钉、食亨等数据源', route: 'connectors' as AppRoute, icon: menuIcon('connectors') },
+    ] : []),
+    ...(isTenantWorkspace && isAdmin ? [
       { label: '管理后台', description: '查看租户概览和管理入口', route: 'admin' as AppRoute, icon: menuIcon('admin') },
       { label: '用户管理', description: '审批成员与权限', route: 'admin-users' as AppRoute, icon: menuIcon('users') },
       { label: '连接器后台', description: '维护企业数据连接配置', route: 'admin-connectors' as AppRoute, icon: menuIcon('connectors') },
@@ -183,9 +204,9 @@ export function MobileLayout({ children }: { children: ReactNode }) {
       <div className="border-t border-slate-200 bg-white md:hidden">
         <TabBar activeKey={activeKey} onChange={onTabChange} safeArea={false}>
           <TabBar.Item key="chat" title="对话" icon={active => mobileTabIcon('chat', active)} />
-          <TabBar.Item key="tasks" title="任务" icon={active => mobileTabIcon('tasks', active)} />
-          {isAdmin && <TabBar.Item key="kb" title="知识库" icon={active => mobileTabIcon('kb', active)} />}
-          <TabBar.Item key="analytics" title="经营旧版" icon={active => mobileTabIcon('analytics', active)} />
+          {isTenantWorkspace && <TabBar.Item key="tasks" title="任务" icon={active => mobileTabIcon('tasks', active)} />}
+          {isTenantWorkspace && isAdmin && <TabBar.Item key="kb" title="知识库" icon={active => mobileTabIcon('kb', active)} />}
+          {isTenantWorkspace && <TabBar.Item key="analytics" title="经营旧版" icon={active => mobileTabIcon('analytics', active)} />}
           <TabBar.Item key="more" title="更多" icon={active => mobileTabIcon('more', active || activeKey === 'more')} />
         </TabBar>
         <SafeArea position="bottom" />
@@ -206,8 +227,27 @@ export function MobileLayout({ children }: { children: ReactNode }) {
             </div>
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-slate-800">{username || '用户'}</p>
-              <p className="mt-0.5 text-xs text-slate-400">{isAdmin ? '管理员' : '成员'}</p>
+              <p className="mt-0.5 text-xs text-slate-400">{workspaceRoleLabel(role)}</p>
             </div>
+          </div>
+          <p className="mb-1 px-1 text-[11px] font-medium text-slate-400">工作空间</p>
+          <div className="mb-3 overflow-hidden rounded-2xl border border-slate-100">
+            {workspaces.map((workspace) => (
+              <button
+                key={workspace.workspace_id}
+                type="button"
+                disabled={Boolean(switchingWorkspaceId)}
+                onClick={() => void changeWorkspace(workspace.workspace_id)}
+                className={`flex min-h-12 w-full items-center gap-3 border-b border-slate-100 px-3 text-left last:border-b-0 disabled:opacity-50 ${
+                  workspace.workspace_id === activeWorkspaceId ? 'bg-blue-50 text-blue-700' : 'bg-white text-slate-700'
+                }`}
+              >
+                <span className="min-w-0 flex-1 truncate text-sm font-medium">{workspace.name}</span>
+                <span className="text-xs text-slate-400">
+                  {switchingWorkspaceId === workspace.workspace_id ? '切换中' : workspace.workspace_id === activeWorkspaceId ? '当前' : ''}
+                </span>
+              </button>
+            ))}
           </div>
           <div className="overflow-hidden rounded-2xl border border-slate-100 shadow-sm">
             {moreItems.map((item, index) => (
@@ -239,4 +279,10 @@ export function MobileLayout({ children }: { children: ReactNode }) {
       </Popup>
     </div>
   );
+}
+
+function workspaceRoleLabel(role: 'admin' | 'member' | 'personal'): string {
+  if (role === 'admin') return '管理员';
+  if (role === 'member') return '成员';
+  return '个人空间';
 }

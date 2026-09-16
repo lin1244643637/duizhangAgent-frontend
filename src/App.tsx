@@ -53,12 +53,26 @@ export default function App() {
 function TenantApp() {
   const { pendingApproval, setPendingApproval, fetchUserSessions, resetToNewSession } = useChatStore();
   const { approveAction } = useAgentChat();
-  const { isLoggedIn, role, hydrating, restoreSession } = useAuthStore();
-  const { route } = useUiStore();
+  const {
+    token,
+    isLoggedIn,
+    role,
+    hydrating,
+    workspaceType,
+    activeWorkspaceId,
+    restoreSession,
+    loadWorkspaceState,
+  } = useAuthStore();
+  const { route, navigate } = useUiStore();
 
   useEffect(() => {
     void restoreSession();
   }, [restoreSession]);
+
+  useEffect(() => {
+    if (hydrating || !isLoggedIn) return;
+    void loadWorkspaceState();
+  }, [hydrating, isLoggedIn, token, loadWorkspaceState]);
 
   useEffect(() => {
     if (hydrating || !isLoggedIn) return;
@@ -67,7 +81,13 @@ function TenantApp() {
         resetToNewSession();
       }
     });
-  }, [hydrating, isLoggedIn]);
+  }, [activeWorkspaceId, hydrating, isLoggedIn, fetchUserSessions, resetToNewSession]);
+
+  useEffect(() => {
+    if (workspaceType === 'personal' && route !== 'chat' && !route.startsWith('profile')) {
+      navigate('chat');
+    }
+  }, [navigate, route, workspaceType]);
 
   if (hydrating) {
     return <div className="h-dvh bg-slate-50" />;
@@ -77,10 +97,13 @@ function TenantApp() {
     return <LoginPage />;
   }
 
-  const isAdmin = route.startsWith('admin');
+  const isPersonal = workspaceType === 'personal';
+  const isAdmin = !isPersonal && route.startsWith('admin');
   const isProfile = route.startsWith('profile');
   const page = isProfile ? (
     <ProfileSettings />
+  ) : isPersonal ? (
+    <ChatWindow />
   ) : isAdmin ? (
     <AdminPage />
   ) : route === 'tasks' ? (

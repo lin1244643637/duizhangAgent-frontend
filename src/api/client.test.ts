@@ -23,6 +23,10 @@ describe('apiFetch refresh retry', () => {
       userId: 'user-a',
       role: 'admin',
       tenantId: 'tenant-a',
+      hasPassword: true,
+      workspaceType: 'tenant',
+      activeWorkspaceId: 'tenant-a',
+      workspaces: [],
       isLoggedIn: true,
       hydrating: false,
     });
@@ -42,6 +46,9 @@ describe('apiFetch refresh retry', () => {
           user_id: 'user-a',
           tenant_id: 'tenant-a',
           role: 'admin',
+          has_password: true,
+          workspace_type: 'tenant',
+          active_workspace_id: 'tenant-a',
           refresh_token: null,
         }));
       }
@@ -80,6 +87,9 @@ describe('apiFetch refresh retry', () => {
       user_id: 'user-a',
       tenant_id: 'tenant-a',
       role: 'admin',
+      has_password: true,
+      workspace_type: 'tenant',
+      active_workspace_id: 'tenant-a',
       refresh_token: null,
     }));
 

@@ -832,7 +832,7 @@ function WorkflowsSection({ show }: { show: ShowFn }) {
       });
       return;
     }
-    if (runningId) return;   // 防重复点击：已有执行在进行中
+    if (runningId || !tenantId) return;   // 防重复点击；个人空间不执行租户工作流
     const storageKey = uncertainRunStorageKey(tenantId, w.id);
     const idempotencyKey = (
       sessionStorage.getItem(storageKey)

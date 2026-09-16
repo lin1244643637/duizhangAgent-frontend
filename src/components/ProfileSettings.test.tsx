@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   logout: vi.fn(),
   refreshAuth: vi.fn(),
   joinTenant: vi.fn(),
+  setInitialPassword: vi.fn(),
   getAuthCapabilities: vi.fn(),
   getContactStatus: vi.fn(),
   requestVerification: vi.fn(),
@@ -18,7 +19,13 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../store/authStore', () => ({
   useAuthStore: () => ({
     username: 'operator', role: 'member', tenantId: 'tenant-1', token: 'jwt-1',
+    hasPassword: true, workspaceType: 'tenant', activeWorkspaceId: 'tenant-1',
+    workspaces: [{
+      workspace_id: 'tenant-1', workspace_type: 'tenant', name: '测试租户',
+      tenant_id: 'tenant-1', role: 'member', is_active: true,
+    }],
     logout: mocks.logout, refreshAuth: mocks.refreshAuth, joinTenant: mocks.joinTenant,
+    setInitialPassword: mocks.setInitialPassword,
   }),
 }));
 
@@ -39,6 +46,15 @@ vi.mock('./PreferencesPanel', () => ({ PreferencesPanel: () => <div>preferences<
 describe('ProfileSettings contacts', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.getAuthCapabilities.mockResolvedValue({
+      verification_enabled: true,
+      code_login_enabled: true,
+      password_reset_enabled: true,
+      contact_management_enabled: true,
+      register_verification_required: true,
+      code_login_reveal_unknown_contact: false,
+      personal_registration_enabled: true,
+    });
     mocks.getContactStatus.mockResolvedValue({
       email: { bound: true, verified: true, masked: 'o***@example.com' },
       phone: { bound: false, verified: false, masked: '' },
@@ -104,11 +120,3 @@ describe('ProfileSettings contacts', () => {
     expect(mocks.logout).toHaveBeenCalled();
   });
 });
-    mocks.getAuthCapabilities.mockResolvedValue({
-      verification_enabled: true,
-      code_login_enabled: true,
-      password_reset_enabled: true,
-      contact_management_enabled: true,
-      register_verification_required: true,
-      code_login_reveal_unknown_contact: false,
-    });

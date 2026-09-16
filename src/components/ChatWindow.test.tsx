@@ -138,7 +138,7 @@ describe('ChatWindow streaming performance', () => {
     componentMocks.sendMessage.mockResolvedValue(true);
     vi.spyOn(useTaskStore.getState(), 'startPolling').mockImplementation(() => undefined);
     vi.spyOn(useTaskStore.getState(), 'stopPolling').mockImplementation(() => undefined);
-    useAuthStore.setState({ role: 'member' });
+    useAuthStore.setState({ role: 'member', workspaceType: 'tenant' });
     useChatStore.setState({
       sessions: [{
         id: 'session-1',
@@ -189,6 +189,21 @@ describe('ChatWindow streaming performance', () => {
     });
 
     expect(componentMocks.messageBubbleRender).not.toHaveBeenCalled();
+  });
+
+  it('keeps personal chat focused on restaurant operations without tenant tools', () => {
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() });
+    useAuthStore.setState({ role: 'personal', workspaceType: 'personal', tenantId: null });
+    useChatStore.setState({
+      sessions: [{ id: 'personal-session', title: '个人对话', messages: [], createdAt: 1 }],
+      activeSessionId: 'personal-session',
+    });
+
+    render(<ChatWindow />);
+
+    expect(screen.getByPlaceholderText('咨询餐饮经营问题')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '上传账单文件' })).toBeNull();
+    expect(useTaskStore.getState().startPolling).not.toHaveBeenCalled();
   });
 
   it('uses prebuilt task and previous-question indexes without per-message scans', () => {
