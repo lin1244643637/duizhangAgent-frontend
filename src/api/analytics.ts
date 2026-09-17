@@ -1129,6 +1129,7 @@ export async function getLaborEfficiency(dateFrom: string, dateTo: string, refre
   const qs = `${cacheQs}&refresh=${refresh || !!options.forceRefresh}`;
   return cachedJson<LaborResult>(`/api/v1/analytics/labor-efficiency?${qs}`, {
     ...options,
+    revalidate: options.revalidate ?? true,
     forceRefresh: refresh || options.forceRefresh,
     namespace: 'analytics.labor_efficiency',
     cacheKey: `/api/v1/analytics/labor-efficiency?${cacheQs}`,

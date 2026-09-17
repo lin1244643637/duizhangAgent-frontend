@@ -4,6 +4,7 @@ const apiFetch = vi.hoisted(() => vi.fn());
 vi.mock('./client', () => ({ apiFetch }));
 
 import {
+  getLaborEfficiency,
   getLaborEfficiencyDetail,
   getLaborEfficiencyTrend,
   getBusinessReport,
@@ -993,6 +994,22 @@ describe('analytics api', () => {
     await getLaborEfficiencyDetail('2026-06-29', '2026-07-05', '53950');
 
     expect(apiFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('revalidates labor summaries without forcing a backend rebuild', async () => {
+    apiFetch
+      .mockResolvedValueOnce(ok({ rows: [], snapshot_status: 'stale' }))
+      .mockResolvedValueOnce(ok({ rows: [], snapshot_status: 'ready' }));
+
+    await getLaborEfficiency('2026-09-13', '2026-09-13');
+    const result = await getLaborEfficiency('2026-09-13', '2026-09-13');
+
+    expect(apiFetch).toHaveBeenCalledTimes(2);
+    expect(apiFetch.mock.calls.map(call => call[0])).toEqual([
+      '/api/v1/analytics/labor-efficiency?granularity=week&date_from=2026-09-13&date_to=2026-09-13&refresh=false',
+      '/api/v1/analytics/labor-efficiency?granularity=week&date_from=2026-09-13&date_to=2026-09-13&refresh=false',
+    ]);
+    expect(result.snapshot_status).toBe('ready');
   });
 
   it('requests business reports with refresh=false by default', async () => {
