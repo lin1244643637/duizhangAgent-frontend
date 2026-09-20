@@ -26,6 +26,7 @@ export interface RegistrationInvite {
   id: string;
   tenant_id: string;
   invite_token: string | null;
+  invite_email: string | null;
   role: string;
   created_by: string;
   expires_at: string;
@@ -37,6 +38,7 @@ export interface RegistrationInvite {
 
 export interface RegistrationInviteCreated {
   invite_token: string;
+  email_sent: boolean;
 }
 
 export async function listJoinRequests(): Promise<JoinRequest[]> {
@@ -112,11 +114,17 @@ export async function listRegistrationInvites(): Promise<RegistrationInvite[]> {
   return asArray<RegistrationInvite>(await res.json(), 'items');
 }
 
-export async function createRegistrationInvite(expiresMinutes = 1440): Promise<RegistrationInviteCreated> {
+export async function createRegistrationInvite(
+  expiresMinutes = 1440,
+  email = '',
+): Promise<RegistrationInviteCreated> {
   const res = await apiFetch(`${ADMIN_USERS}/invitations`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ expires_minutes: expiresMinutes }),
+    body: JSON.stringify({
+      expires_minutes: expiresMinutes,
+      ...(email ? { email } : {}),
+    }),
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));

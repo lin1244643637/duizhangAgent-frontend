@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button, Select, Table, type TableColumnsType } from 'antd';
+import { Button, Input, Modal, Select, Table, type TableColumnsType } from 'antd';
 
 import {
   createRegistrationInvite,
@@ -27,6 +27,9 @@ const STATUS_CLASS: Record<RegistrationInviteStatus, string> = {
 export function RegistrationInvitesPanel() {
   const [items, setItems] = useState<RegistrationInvite[]>([]);
   const [expiresMinutes, setExpiresMinutes] = useState(1440);
+  const [email, setEmail] = useState('');
+  const [emailError, setEmailError] = useState('');
+  const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [latestToken, setLatestToken] = useState('');
@@ -60,13 +63,25 @@ export function RegistrationInvitesPanel() {
   }
 
   async function handleCreate() {
+    const targetEmail = email.trim();
+    if (targetEmail && !isEmail(targetEmail)) {
+      setEmailError('请输入有效的邮箱地址');
+      showNotice('请输入有效的邮箱地址', 'error');
+      return;
+    }
     setCreating(true);
     try {
-      const result = await createRegistrationInvite(expiresMinutes);
+      const result = await createRegistrationInvite(expiresMinutes, targetEmail);
       if (!mountedRef.current) return;
       setLatestToken(result.invite_token);
       await fetchInvites();
-      showNotice('注册邀请码已生成，请及时复制', 'success');
+      setEmail('');
+      setEmailError('');
+      setInviteModalOpen(false);
+      showNotice(
+        result.email_sent ? '邀请邮件已发送' : '注册邀请码已生成，请及时复制',
+        'success',
+      );
     } catch (error) {
       showNotice(error instanceof Error ? error.message : '生成注册邀请码失败', 'error');
     } finally {
@@ -74,7 +89,15 @@ export function RegistrationInvitesPanel() {
     }
   }
 
+  function closeInviteModal() {
+    if (creating) return;
+    setEmail('');
+    setEmailError('');
+    setInviteModalOpen(false);
+  }
+
   useEffect(() => {
+    mountedRef.current = true;
     void fetchInvites();
     return () => {
       mountedRef.current = false;
@@ -97,6 +120,12 @@ export function RegistrationInvitesPanel() {
       dataIndex: 'role',
       width: 80,
       render: (role) => <span className="text-slate-600">{role === 'admin' ? '管理员' : '成员'}</span>,
+    },
+    {
+      title: '邀请邮箱',
+      dataIndex: 'invite_email',
+      width: 220,
+      render: (value: string | null) => <span className="text-slate-600">{value || '—'}</span>,
     },
     {
       title: '邀请码',
@@ -138,21 +167,63 @@ export function RegistrationInvitesPanel() {
           <h3 className="text-base font-semibold text-slate-800">注册邀请码</h3>
           <p className="mt-1 text-xs text-slate-500">用于新用户注册。租户加入码只给已有账号申请加入，不能用于注册。</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Select
-            aria-label="注册邀请码有效期"
-            value={expiresMinutes}
-            onChange={setExpiresMinutes}
-            options={[
-              { value: 1440, label: '24 小时' },
-              { value: 2880, label: '48 小时' },
-              { value: 10080, label: '7 天' },
-            ]}
-            className="w-28"
-          />
-          <Button type="primary" loading={creating} onClick={handleCreate}>生成注册邀请码</Button>
-        </div>
+        <Button type="primary" onClick={() => setInviteModalOpen(true)}>邀请用户</Button>
       </div>
+
+      <Modal
+        title="邀请用户"
+        open={inviteModalOpen}
+        onCancel={closeInviteModal}
+        onOk={() => { void handleCreate(); }}
+        okText={email.trim() ? '发送邀请邮件' : '生成注册邀请码'}
+        cancelText="取消"
+        confirmLoading={creating}
+        destroyOnHidden
+      >
+        <div className="space-y-4">
+          <div>
+            <label htmlFor="registration-invite-email" className="mb-1 block text-xs font-medium text-slate-600">
+              接收邮箱（可选）
+            </label>
+            <Input
+              id="registration-invite-email"
+              aria-label="接收邀请的邮箱"
+              type="email"
+              allowClear
+              value={email}
+              status={emailError ? 'error' : undefined}
+              placeholder="name@example.com"
+              onChange={(event) => {
+                setEmail(event.target.value);
+                if (emailError) setEmailError('');
+              }}
+              onBlur={() => {
+                const value = email.trim();
+                setEmailError(value && !isEmail(value) ? '请输入有效的邮箱地址' : '');
+              }}
+              onPressEnter={() => { void handleCreate(); }}
+            />
+            {emailError ? <div className="mt-1 text-xs text-red-600">{emailError}</div> : null}
+          </div>
+          <div>
+            <label htmlFor="registration-invite-expiry" className="mb-1 block text-xs font-medium text-slate-600">
+              邀请码有效期
+            </label>
+            <Select
+              id="registration-invite-expiry"
+              aria-label="注册邀请码有效期"
+              value={expiresMinutes}
+              onChange={setExpiresMinutes}
+              options={[
+                { value: 1440, label: '24 小时' },
+                { value: 2880, label: '48 小时' },
+                { value: 10080, label: '7 天' },
+              ]}
+              className="w-full"
+            />
+          </div>
+        </div>
+      </Modal>
 
       {latestToken ? (
         <div className="mt-3 rounded-md border border-blue-100 bg-blue-50 p-3">
@@ -178,4 +249,8 @@ export function RegistrationInvitesPanel() {
       {notice && <FloatingNotice notice={notice} onClose={() => setNotice(null)} />}
     </section>
   );
+}
+
+function isEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
