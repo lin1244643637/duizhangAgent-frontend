@@ -24,6 +24,7 @@ const LABELS: Record<string, string> = {
   finance_report: '财务报表',
   salary_report: '工资表',
   research: '经营研究',
+  general_graph: '智能问答',
 };
 
 const RESEARCH_STATUS_COLORS: Record<string, string> = {
@@ -90,6 +91,9 @@ export function TaskCard({ task, onResearchResume, onResearchCancel, researchCan
       ? meta.run_reason
       : null;
   const reviewDetail = manualReviewDetail(reviewReason);
+  const failureDetail = typeof meta.failure_detail === 'string' && meta.failure_detail.trim()
+    ? meta.failure_detail.trim()
+    : '任务执行失败，请稍后重试。';
 
   async function handleResearchResume() {
     const message = additionalData.trim();
@@ -248,7 +252,7 @@ export function TaskCard({ task, onResearchResume, onResearchCancel, researchCan
           </div>
         )}
         {task.status === 'failed' && task.task_type !== 'file_parsing' && (
-          <p className="mt-1 text-red-400 text-xs">任务执行失败</p>
+          <p className="mt-1 text-xs leading-5 text-red-500">{failureDetail}</p>
         )}
         {task.status === 'completed' && task.task_type === 'reconciliation' && (
           <div className="mt-1 text-xs text-slate-500">

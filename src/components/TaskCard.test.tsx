@@ -113,6 +113,21 @@ describe('TaskCard', () => {
     }));
   });
 
+  it('shows the persisted failure detail for a failed general conversation', () => {
+    render(<TaskCard task={task({
+      task_type: 'general_graph',
+      status: 'failed',
+      meta: {
+        run_status: 'failed',
+        failure_reason: 'model_failed',
+        failure_detail: '模型服务暂时未响应，请稍后重试。',
+      },
+    })} />);
+
+    expect(screen.getByText('智能问答')).toBeTruthy();
+    expect(screen.getByText('模型服务暂时未响应，请稍后重试。')).toBeTruthy();
+  });
+
   it('shows export for a cached reconciliation task', () => {
     render(<TaskCard task={task({
       task_type: 'reconciliation',
