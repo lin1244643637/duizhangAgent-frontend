@@ -1,5 +1,5 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import * as XLSX from 'xlsx-js-style';
 
 import { MessageBubble } from './MessageBubble';
@@ -211,6 +211,107 @@ describe('MessageBubble table rendering', () => {
     expect((activity?.compareDocumentPosition(response) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     expect(response.compareDocumentPosition(copy) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     expect(activity?.parentElement?.className).toContain('gap-2');
+  });
+
+  describe('AG-UI typewriter presentation', () => {
+    let frames: Map<number, FrameRequestCallback>;
+    let time: number;
+    let frameId: number;
+    const running: Message = {
+      id: 'animated', role: 'assistant', content: '', createdAt: 0, streaming: true,
+      agui: { runId: 'run-1', status: 'running' },
+    };
+    const tick = (ms = 32) => act(() => {
+      time += ms;
+      const callbacks = [...frames.values()];
+      frames.clear();
+      callbacks.forEach((callback) => callback(time));
+    });
+    beforeEach(() => {
+      time = 0;
+      frameId = 0;
+      frames = new Map();
+      vi.spyOn(performance, 'now').mockImplementation(() => time);
+      vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+        frames.set(++frameId, callback);
+        return frameId;
+      });
+      vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => { frames.delete(id); });
+    });
+    afterEach(() => {
+      cleanup();
+      vi.mocked(performance.now).mockRestore();
+      vi.mocked(window.requestAnimationFrame).mockRestore();
+      vi.mocked(window.cancelAnimationFrame).mockRestore();
+    });
+
+    it('animates only display text, separates run completion, and copies the full source', async () => {
+      const { container, rerender } = render(<MessageBubble message={running} sessionId="s" animateText />);
+      const received = { ...running, content: '**经营分析**\n\n普通文字。'.repeat(200) };
+      rerender(<MessageBubble message={received} sessionId="s" animateText />);
+      expect(container.querySelector('.markdown-body')?.textContent).toBe('');
+      tick();
+      expect(container.querySelector('.markdown-body')?.textContent?.length).toBeGreaterThan(0);
+      expect(received.content).toHaveLength(3000);
+      const completed: Message = { ...received, streaming: false, agui: { runId: 'run-1', status: 'completed' } };
+      rerender(<MessageBubble message={completed} sessionId="s" animateText />);
+      expect(screen.getByText('回答已生成，正在显示')).toBeTruthy();
+      expect(screen.queryByTitle('复制内容')).toBeNull();
+      expect(container.querySelector('.markdown-body')?.closest('[aria-live="off"]')).not.toBeNull();
+      expect(screen.queryByRole('button', { name: '直接显示全部' })).toBeNull();
+      tick(600);
+      expect(screen.getByText('回复已完整显示')).toBeTruthy();
+      expect(container.querySelector('.max-h-72')).not.toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: '展开全文' }));
+      expect(container.querySelector('.max-h-72')).toBeNull();
+      expect(container.querySelectorAll('.markdown-body strong')).toHaveLength(200);
+      fireEvent.click(screen.getByTitle('复制内容'));
+      await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith(received.content));
+      expect(frames.size).toBe(0);
+    });
+
+    it.each(['failed', 'cancelled', 'interrupted', 'disconnected', 'waiting_for_approval'] as const)(
+      'flushes immediately on %s without pretending the task is still running', (status) => {
+        const { rerender } = render(<MessageBubble message={running} sessionId="s" animateText />);
+        const received = { ...running, content: '已经完整收到的回复' };
+        rerender(<MessageBubble message={received} sessionId="s" animateText />);
+        expect(screen.getByText('正在显示回复')).toBeTruthy();
+        rerender(<MessageBubble message={{ ...received, streaming: false, agui: { runId: 'run-1', status } }} sessionId="s" animateText />);
+        expect(screen.getByText(received.content)).toBeTruthy();
+        expect(screen.queryByRole('button', { name: '直接显示全部' })).toBeNull();
+        expect(frames.size).toBe(0);
+      },
+    );
+
+    it.each([
+      '| 门店 | 金额 |\n| --- | --- |\n| A | 1 |',
+      '```ts\nconst n = 1;\n```',
+      '<p>完整正文</p><script>alert(1)</script>',
+    ])('bypasses animation for complex Markdown and retains sanitization: %s', (content) => {
+      const { container, rerender } = render(<MessageBubble message={running} sessionId="s" animateText />);
+      rerender(<MessageBubble message={{ ...running, content }} sessionId="s" animateText />);
+      expect(container.querySelector('.markdown-body')?.textContent?.length).toBeGreaterThan(0);
+      expect(container.querySelector('script')).toBeNull();
+      expect(screen.queryByRole('button', { name: '直接显示全部' })).toBeNull();
+      expect(frames.size).toBe(0);
+    });
+
+    it('shows structured results immediately and does not animate standard mode', () => {
+      const { rerender } = render(<MessageBubble message={running} sessionId="s" animateText />);
+      rerender(<MessageBubble message={{ ...running, content: '接收完的内容' }} sessionId="s" animateText />);
+      expect(screen.getByText('正在显示回复')).toBeTruthy();
+      const response = {
+        version: 1, domain: 'analytics', task: 'summary', result_status: 'ok',
+        result_id: 'result-1', source_turn_id: 'turn-1', parts: [],
+      } as NonNullable<Message['agentResponse']>;
+      rerender(<MessageBubble message={{ ...running, content: '接收完的内容', agentResponse: response }} sessionId="s" animateText structuredContent={<div>结构化结果</div>} />);
+      expect(screen.getByText('接收完的内容')).toBeTruthy();
+      expect(screen.getByText('结构化结果')).toBeTruthy();
+      expect(frames.size).toBe(0);
+      rerender(<MessageBubble message={{ ...running, agui: undefined, content: '标准模式直接显示' }} sessionId="s" />);
+      expect(screen.getByText('标准模式直接显示')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: '直接显示全部' })).toBeNull();
+    });
   });
 
   it('allows safe markdown but removes hostile tags, attributes, and URL protocols', () => {

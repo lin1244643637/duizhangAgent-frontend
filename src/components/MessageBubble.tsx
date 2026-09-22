@@ -1,4 +1,4 @@
-import { useEffect, useState, type MouseEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react';
 import { Button } from 'antd';
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
@@ -10,12 +10,15 @@ import { TableDisplayFrame } from './TableDisplayFrame';
 import { FloatingNotice, type FloatingNoticeState } from './FloatingNotice';
 import { formatBeijingTime } from '../utils/time';
 import { AgentActivitySummary } from './AgentActivitySummary';
+import { useTypewriter } from '../hooks/useTypewriter';
 
 interface Props {
   message: Message;
   sessionId: string;
   hideStructuredContent?: boolean;
   structuredContent?: ReactNode;
+  canDelete?: boolean;
+  animateText?: boolean;
 }
 
 marked.setOptions({ gfm: true, breaks: true });
@@ -274,7 +277,7 @@ function extractKnowledgeDraft(content: string): KnowledgeDraft | null {
   };
 }
 
-export function MessageBubble({ message, sessionId, hideStructuredContent = false, structuredContent }: Props) {
+export function MessageBubble({ message, sessionId, hideStructuredContent = false, structuredContent, canDelete = true, animateText = false }: Props) {
   const { deleteMessagePair } = useChatStore();
   const isUser = message.role === 'user';
   const [copied, setCopied] = useState(false);
@@ -291,11 +294,17 @@ export function MessageBubble({ message, sessionId, hideStructuredContent = fals
   const reportDownloads = !isUser && contentForDisplay ? extractReportDownloads(contentForDisplay) : [];
   const knowledgeDraft = !isUser && contentForDisplay ? extractKnowledgeDraft(contentForDisplay) : null;
   const visibleContent = reportDownloads.length ? stripReportDownloadLinks(contentForDisplay) : contentForDisplay;
-  const canCollapseLongContent = !isUser && !hasTable && !message.streaming && (visibleContent?.length || 0) > 1200;
+  // Complex/incomplete markup bypasses animation; existing Markdown and structured renderers remain authoritative.
+  const complexMarkdown = /[|`<>]|^\s*~{3}|^(?: {4}|\t)\S/m.test(visibleContent);
+  const canAnimate = animateText && !isUser && Boolean(message.agui)
+    && ['connecting', 'running', 'completed'].includes(message.agui!.status)
+    && !message.agentResponse && !complexMarkdown && !reportDownloads.length && !knowledgeDraft;
+  const playback = useTypewriter(visibleContent, canAnimate, Boolean(message.streaming));
+  const canCollapseLongContent = !isUser && !hasTable && !message.streaming && !playback.isTyping && (visibleContent?.length || 0) > 1200;
   const tableTitleMatch = contentForDisplay.match(/\*\*(.+?)\*\*/);
   const tableTitle = tableTitleMatch ? tableTitleMatch[1].replace(/[\\/:*?"<>|]/g, '_') : '表格数据';
-  const renderedMarkdown = visibleContent ? renderMarkdown(visibleContent, expandedMarkdownTables) : '';
-  const markdownSegments = renderedMarkdown ? splitRenderedMarkdownTables(renderedMarkdown) : [];
+  const renderedMarkdown = useMemo(() => playback.text ? renderMarkdown(playback.text, expandedMarkdownTables) : '', [playback.text, expandedMarkdownTables]);
+  const markdownSegments = useMemo(() => renderedMarkdown ? splitRenderedMarkdownTables(renderedMarkdown) : [], [renderedMarkdown]);
   const tableSegmentCount = markdownSegments.filter((segment) => segment.type === 'table').length;
   const messageTime = formatMessageTime(message.createdAt);
 
@@ -420,6 +429,7 @@ export function MessageBubble({ message, sessionId, hideStructuredContent = fals
         {hasPublicActivity && <AgentActivitySummary activity={message.activity!} />}
         {(contentForDisplay || reportDownloads.length > 0 || (message.streaming && !hasPublicActivity)) && (
           <div
+            aria-live={animateText ? 'off' : undefined}
             className={`min-w-0 rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
               hasTable && !isUser ? 'w-full max-w-full overflow-hidden' : ''
             } ${
@@ -521,9 +531,17 @@ export function MessageBubble({ message, sessionId, hideStructuredContent = fals
           ) : (
             message.streaming && renderLoading()
           )}
-          {message.streaming && message.content && (
-            <span className="inline-block w-0.5 h-4 bg-current ml-0.5 animate-pulse align-middle" />
+          {(message.streaming || playback.isTyping) && message.content && (
+            <span aria-hidden="true" className="inline-block w-0.5 h-4 bg-current ml-0.5 animate-pulse motion-reduce:animate-none align-middle" />
           )}
+          </div>
+        )}
+        {animateText && !isUser && (
+          <div className="flex max-w-full flex-wrap items-center gap-2 px-1 text-xs text-slate-500">
+            <span role="status" aria-live="polite">
+              {playback.isTyping ? (message.streaming ? '正在显示回复' : '回答已生成，正在显示')
+                : message.agui?.status === 'completed' && message.content ? '回复已完整显示' : ''}
+            </span>
           </div>
         )}
         {structuredContent}
@@ -534,8 +552,8 @@ export function MessageBubble({ message, sessionId, hideStructuredContent = fals
           </div>
         )}
 
-        {/* 操作按钮：常驻显示，streaming 时隐藏 */}
-        {!message.streaming && (
+        {/* 接收和动画展示结束后显示操作按钮；复制始终使用完整原文。 */}
+        {!message.streaming && !playback.isTyping && (
           <div className={`mt-1 flex max-w-full flex-nowrap items-center gap-1.5 ${isUser ? 'self-end' : 'self-start'}`}>
             {knowledgeDraft && !isUser && (
               <button
@@ -574,7 +592,7 @@ export function MessageBubble({ message, sessionId, hideStructuredContent = fals
                 </>
               )}
             </button>
-            <button
+            {canDelete && <button
               type="button"
               onClick={handleDelete}
               title="删除问答"
@@ -584,7 +602,7 @@ export function MessageBubble({ message, sessionId, hideStructuredContent = fals
                 <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
               </svg>
               删除
-            </button>
+            </button>}
           </div>
         )}
       </div>

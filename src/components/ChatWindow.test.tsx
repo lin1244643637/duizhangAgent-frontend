@@ -12,6 +12,9 @@ const componentMocks = vi.hoisted(() => ({
   sendMessage: vi.fn(),
   resumeResearchRun: vi.fn(),
   cancelResearchRun: vi.fn(),
+  reconnectAguiRun: vi.fn(),
+  cancelAguiRun: vi.fn(),
+  decideAguiApproval: vi.fn(),
   taskCardProps: vi.fn(),
   notificationSuccess: vi.fn(),
   notificationError: vi.fn(),
@@ -35,6 +38,10 @@ vi.mock('../hooks/useAgentChat', () => ({
     approveAction: vi.fn(),
     resumeResearchRun: componentMocks.resumeResearchRun,
     cancelResearchRun: componentMocks.cancelResearchRun,
+    reconnectAguiRun: componentMocks.reconnectAguiRun,
+    cancelAguiRun: componentMocks.cancelAguiRun,
+    decideAguiApproval: componentMocks.decideAguiApproval,
+    canReconnectAguiRun: () => true,
   }),
 }));
 vi.mock('./MessageBubble', () => ({
@@ -136,6 +143,7 @@ describe('ChatWindow streaming performance', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     componentMocks.sendMessage.mockResolvedValue(true);
+    componentMocks.decideAguiApproval.mockResolvedValue(true);
     vi.spyOn(useTaskStore.getState(), 'startPolling').mockImplementation(() => undefined);
     vi.spyOn(useTaskStore.getState(), 'stopPolling').mockImplementation(() => undefined);
     useAuthStore.setState({ role: 'member', workspaceType: 'tenant' });
@@ -165,6 +173,7 @@ describe('ChatWindow streaming performance', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
     if (originalScrollIntoView) {
       Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', originalScrollIntoView);
     } else {
@@ -189,6 +198,76 @@ describe('ChatWindow streaming performance', () => {
     });
 
     expect(componentMocks.messageBubbleRender).not.toHaveBeenCalled();
+  });
+
+  it('uses AG-UI for fresh conversations without exposing an experimental selector', () => {
+    vi.stubEnv('VITE_AGUI_CHAT_ENABLED', 'true');
+    act(() => { useChatStore.getState().resetToNewSession(); });
+    render(<ChatWindow />);
+    expect(screen.queryByRole('group', { name: '对话模式' })).toBeNull();
+    expect(useChatStore.getState().sessions[0].conversationMode).toBe('agui');
+    expect(screen.getByRole('button', { name: '上传账单文件' })).toBeTruthy();
+    expect(screen.queryByText(/实验模式/)).toBeNull();
+    expect(useTaskStore.getState().startPolling).toHaveBeenCalledWith('chat-window', expect.objectContaining({ sessionId: expect.any(String) }));
+  });
+
+  it('keeps an explicit rollback switch for fresh conversations', () => {
+    vi.stubEnv('VITE_AGUI_CHAT_ENABLED', 'false');
+    act(() => { useChatStore.getState().resetToNewSession(); });
+    render(<ChatWindow />);
+    expect(useChatStore.getState().sessions[0].conversationMode).toBe('legacy');
+    expect(screen.queryByRole('group', { name: '对话模式' })).toBeNull();
+  });
+
+  it('shows disconnected-run recovery without enabling duplicate sends', async () => {
+    act(() => { useChatStore.setState({ sessions: [{
+      id: 'session-1', title: '实验会话', createdAt: 0, conversationMode: 'agui', messages: [userMessage, {
+        ...assistantMessage, taskId: undefined, streaming: false, agui: { runId: 'agui-1', status: 'disconnected' },
+      }],
+    }] }); });
+    render(<ChatWindow />);
+    expect(screen.getByText('连接已断开，任务状态未确认')).toBeTruthy();
+    fireEvent.change(screen.getByRole('textbox', { name: '对话输入' }), { target: { value: '再问一次' } });
+    expect((screen.getByRole('button', { name: '发送消息' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.keyDown(screen.getByRole('textbox', { name: '对话输入' }), { key: 'Enter' });
+    expect(componentMocks.sendMessage).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '重连原任务' }));
+    expect(componentMocks.reconnectAguiRun).toHaveBeenCalledWith('agui-1');
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '停止本轮' })); });
+    expect(componentMocks.cancelAguiRun).toHaveBeenCalledWith('agui-1');
+    expect(componentMocks.notificationSuccess).toHaveBeenCalledWith(expect.objectContaining({ duration: 5, closable: true }));
+  });
+
+  it('confirms an AG-UI approval before resuming the same run', async () => {
+    act(() => { useChatStore.setState({ sessions: [{
+      id: 'session-1', title: '审批会话', createdAt: 0, conversationMode: 'agui', messages: [userMessage, {
+        ...assistantMessage,
+        taskId: undefined,
+        streaming: false,
+        agui: {
+          runId: 'agui-approval-1',
+          status: 'waiting_for_approval',
+          approval: {
+            id: 'approval-1',
+            toolLabel: '同步经营数据',
+            message: 'Agent 请求同步经营数据',
+            expiresAt: '2026-09-22T15:00:00+08:00',
+          },
+        },
+      }],
+    }] }); });
+    render(<ChatWindow />);
+
+    fireEvent.click(screen.getByRole('button', { name: '同意执行' }));
+    expect(screen.getByText('确认允许 Agent 执行“同步经营数据”吗？')).toBeTruthy();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '确认执行' })); });
+
+    expect(componentMocks.decideAguiApproval).toHaveBeenCalledWith('agui-approval-1', 'approve');
+    expect(componentMocks.notificationSuccess).toHaveBeenCalledWith({
+      message: '已同意执行',
+      duration: 5,
+      closable: true,
+    });
   });
 
   it('keeps personal chat focused on restaurant operations without tenant tools', () => {
@@ -237,7 +316,7 @@ describe('ChatWindow streaming performance', () => {
     const messageList = screen.getByRole('log', { name: '对话消息' });
     expect(messageList.classList.contains('overscroll-contain')).toBe(true);
     expect(scrollIntoView).not.toHaveBeenCalled();
-    expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ behavior: 'smooth' }));
+    expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ behavior: 'auto' }));
     scrollTo.mockClear();
     scrollIntoView.mockClear();
 
@@ -256,7 +335,56 @@ describe('ChatWindow streaming performance', () => {
       });
     });
     expect(scrollIntoView).not.toHaveBeenCalled();
-    expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ behavior: 'smooth' }));
+    expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ behavior: 'auto' }));
+  });
+
+  it('does not pull readers down until they choose to return to the latest message', () => {
+    const scrollTo = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: scrollTo });
+    render(<ChatWindow />);
+    const list = screen.getByRole('log', { name: '对话消息' });
+    Object.defineProperties(list, {
+      scrollHeight: { configurable: true, value: 2000 },
+      clientHeight: { configurable: true, value: 500 },
+      scrollTop: { configurable: true, writable: true, value: 700 },
+    });
+    fireEvent.scroll(list);
+    scrollTo.mockClear();
+    act(() => useChatStore.getState().appendAssistantChunk('session-1', 'assistant-1', '新增片段'));
+    expect(scrollTo).not.toHaveBeenCalled();
+    const jumpButton = screen.getByRole('button', { name: '下滑到最底部' });
+    expect(jumpButton.className).toContain('animate-bounce');
+    fireEvent.click(jumpButton);
+    expect(scrollTo).toHaveBeenCalledWith({ top: 2000, behavior: 'auto' });
+    expect(screen.queryByRole('button', { name: '下滑到最底部' })).toBeNull();
+    scrollTo.mockClear();
+    act(() => useChatStore.getState().appendAssistantChunk('session-1', 'assistant-1', '继续接收'));
+    expect(scrollTo).toHaveBeenCalled();
+  });
+
+  it('follows typewriter height changes, respects scrolling up, and cleans up observers', () => {
+    let onResize: () => void = () => undefined;
+    const disconnect = vi.fn();
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: () => void) { onResize = callback; }
+      observe() {}
+      disconnect = disconnect;
+    });
+    const scrollTo = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: scrollTo });
+    const { unmount } = render(<ChatWindow />);
+    scrollTo.mockClear();
+    act(() => onResize());
+    expect(scrollTo).toHaveBeenCalled();
+    const list = screen.getByRole('log', { name: '对话消息' });
+    Object.defineProperties(list, { scrollHeight: { value: 2000 }, clientHeight: { value: 500 } });
+    fireEvent.scroll(list);
+    scrollTo.mockClear();
+    act(() => onResize());
+    expect(scrollTo).not.toHaveBeenCalled();
+    unmount();
+    expect(disconnect).toHaveBeenCalled();
+    expect(cancelAnimationFrame).toHaveBeenCalled();
   });
 
   it('renders structured response parts while retaining the assistant markdown fallback', () => {

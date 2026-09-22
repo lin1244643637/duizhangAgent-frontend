@@ -5,6 +5,7 @@ import { finishAgentActivity, mergeAgentActivityStep, parseAgentActivity, parseA
 import { createId } from '../utils/id';
 import { parseBeijingTime } from '../utils/time';
 import { registerSessionCleanup } from '../api/sessionLifecycle';
+import { isAguiEnabled, type AguiMessageState, type ConversationMode } from '../types/agui';
 
 type ConnectorMessageMetadata = {
   agent_response?: unknown;
@@ -25,6 +26,8 @@ interface ChatState {
 
   // 会话操作
   createSession: () => string;
+  setConversationMode: (sessionId: string, mode: ConversationMode) => void;
+  setMessageAgui: (sessionId: string, messageId: string, state: AguiMessageState) => void;
   setActiveSession: (id: string) => void;
   loadSessionHistory: (sessionId: string) => Promise<void>;
   fetchUserSessions: () => Promise<void>;
@@ -58,6 +61,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
   loadingHistory: false,
   pendingApproval: null,
 
+  setConversationMode: (sessionId, mode) => {
+    if (mode === 'agui' && !isAguiEnabled()) return;
+    set((state) => ({ sessions: state.sessions.map((session) => (
+      session.id === sessionId && session.pending && session.messages.length === 0
+        ? { ...session, conversationMode: mode } : session
+    )) }));
+  },
+
+  setMessageAgui: (sessionId, messageId, agui) => {
+    if (get().activeSessionId === sessionId) localStorage.setItem('activeSessionId', sessionId);
+    set((state) => ({
+      sessions: state.sessions.map((session) => session.id === sessionId ? {
+        ...session,
+        pending: false,
+        loaded: true,
+        messages: session.messages.map((message) => message.id === messageId ? { ...message, agui } : message),
+      } : session),
+    }));
+  },
+
   // 新建空白会话（不加入侧边栏，pending 状态不展示）
   createSession: () => {
     const id = createId();
@@ -67,6 +90,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       messages: [],
       createdAt: Date.now(),
       pending: true,
+      conversationMode: isAguiEnabled() ? 'agui' : 'legacy',
     };
     set((s) => ({
       sessions: [session, ...s.sessions],
@@ -84,6 +108,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       messages: [],
       createdAt: Date.now(),
       pending: true,
+      conversationMode: isAguiEnabled() ? 'agui' : 'legacy',
     };
     set((s) => ({
       sessions: [session, ...s.sessions.filter((sess) => !sess.pending)],
@@ -109,6 +134,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         messages: [],
         createdAt: parseBeijingTime(item.created_at),
         loaded: false,
+        conversationMode: isAguiEnabled() ? 'agui' : 'legacy',
       }));
 
       // 恢复上次活跃会话，否则由 resetToNewSession 创建新会话
@@ -163,8 +189,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // 切换到历史会话时懒加载消息
   setActiveSession: (id) => {
     set({ activeSessionId: id });
-    localStorage.setItem('activeSessionId', id);
     const sess = get().sessions.find((s) => s.id === id);
+    localStorage.setItem('activeSessionId', id);
     if (sess && !sess.pending && !sess.loaded && sess.messages.length === 0) {
       get().loadSessionHistory(id);
     }

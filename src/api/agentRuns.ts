@@ -10,6 +10,15 @@ export interface AgentRunCommandResult {
   event_cursor: number;
 }
 
+export type AgentRunApprovalDecision = 'approve' | 'reject';
+
+export interface AgentRunApprovalResult {
+  accepted: boolean;
+  run_id: string;
+  run_status: AgentRunStatus;
+  task_status: string;
+}
+
 const AGENT_RUN_STATUSES = new Set<AgentRunStatus>([
   'queued', 'running', 'validating', 'waiting_for_data', 'waiting_for_approval',
   'needs_review', 'completed', 'failed', 'cancelled',
@@ -68,6 +77,33 @@ export function cancelAgentRun(
     run_id: runId,
     request_id: requestId,
   }, '研究任务取消失败');
+}
+
+export async function approveAgentRun(
+  runId: string,
+  requestId: string,
+  decision: AgentRunApprovalDecision,
+): Promise<AgentRunApprovalResult> {
+  const response = await apiFetch('/api/v1/agent-runs/approve-action', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ run_id: runId, request_id: requestId, decision }),
+  });
+  const data: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const detail = data && typeof data === 'object' && !Array.isArray(data)
+      ? (data as Record<string, unknown>).detail
+      : null;
+    throw new Error(typeof detail === 'string' ? detail : '审批操作失败');
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('审批操作返回格式错误');
+  const result = data as Record<string, unknown>;
+  if (typeof result.accepted !== 'boolean'
+    || typeof result.run_id !== 'string'
+    || typeof result.run_status !== 'string'
+    || !AGENT_RUN_STATUSES.has(result.run_status as AgentRunStatus)
+    || typeof result.task_status !== 'string') throw new Error('审批操作返回格式错误');
+  return result as unknown as AgentRunApprovalResult;
 }
 
 export class AgentRunStreamError extends Error {

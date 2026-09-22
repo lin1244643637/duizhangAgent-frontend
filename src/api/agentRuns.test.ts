@@ -6,7 +6,7 @@ vi.mock('./client', () => ({
   apiStreamFetch: vi.fn(),
 }));
 
-import { cancelAgentRun, resumeAgentRun } from './agentRuns';
+import { approveAgentRun, cancelAgentRun, resumeAgentRun } from './agentRuns';
 
 function response(body: unknown, ok = true): Response {
   return {
@@ -56,6 +56,27 @@ describe('agent run command clients', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ run_id: 'run-1', request_id: 'request-2' }),
+    });
+  });
+
+  it('submits an approval without requiring the legacy numeric event cursor', async () => {
+    const approvalResult = {
+      accepted: true,
+      run_id: 'run-1',
+      run_status: 'queued',
+      task_status: 'running',
+    };
+    apiFetch.mockResolvedValue(response(approvalResult));
+
+    await expect(approveAgentRun('run-1', 'approval-request-1', 'approve')).resolves.toEqual(approvalResult);
+    expect(apiFetch).toHaveBeenCalledWith('/api/v1/agent-runs/approve-action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        run_id: 'run-1',
+        request_id: 'approval-request-1',
+        decision: 'approve',
+      }),
     });
   });
 

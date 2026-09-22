@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowDownOutlined } from '@ant-design/icons';
 import { Button, Input, notification } from 'antd';
+import type { AgentRunApprovalDecision } from '../api/agentRuns';
 import type { AgentRunCommandResult } from '../api/agentRuns';
 import { useChatStore } from '../store/chatStore';
 import { useTaskStore } from '../store/taskStore';
@@ -15,6 +17,7 @@ import { QueryEvidencePanel } from './QueryEvidencePanel';
 import { KnowledgeExtractDialog } from './KnowledgeExtractDialog';
 import { ConfirmDialog } from './ConfirmDialog';
 import { Popup, SafeArea } from 'antd-mobile';
+import { AGUI_STATUS_LABELS, isAguiUnresolved } from '../types/agui';
 
 const LINE_HEIGHT = 24;
 const MAX_ROWS = 4;
@@ -47,7 +50,7 @@ export function ChatWindow() {
   const cancelResearchInFlightRef = useRef(false);
   const [cancellingResearchTaskId, setCancellingResearchTaskId] = useState<string | null>(null);
 
-  const { sendMessage, resumeResearchRun, cancelResearchRun } = useAgentChat({
+  const { sendMessage, resumeResearchRun, cancelResearchRun, reconnectAguiRun, cancelAguiRun, decideAguiApproval, canReconnectAguiRun } = useAgentChat({
     onDuplicate: ({ period, existing_sources, onConfirm }) => setDupConfirm({ period, existing_sources, onConfirm }),
   });
   const role = useAuthStore((state) => state.role);
@@ -57,15 +60,28 @@ export function ChatWindow() {
   const [showUpload, setShowUpload] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
+  const [cancellingAguiRunId, setCancellingAguiRunId] = useState<string | null>(null);
+  const cancellingAguiRef = useRef(false);
+  const [aguiApprovalDecision, setAguiApprovalDecision] = useState<{
+    runId: string;
+    toolLabel: string;
+    decision: AgentRunApprovalDecision;
+  } | null>(null);
+  const decidingAguiApprovalRef = useRef(false);
   const [showExtract, setShowExtract] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const messageListRef = useRef<HTMLDivElement>(null);
+  const messageContentRef = useRef<HTMLDivElement>(null);
+  const followLatestRef = useRef(true);
+  const [showLatestButton, setShowLatestButton] = useState(false);
 
   const session = useMemo(
     () => sessions.find((item) => item.id === activeSessionId),
     [activeSessionId, sessions],
   );
   const messages = session?.messages ?? [];
+  const isAgui = session?.conversationMode === 'agui';
+  const unresolvedAgui = messages.find((message) => message.agui && isAguiUnresolved(message.agui.status));
   const hiddenToolCallIds = useMemo(() => {
     const hidden = new Set<string>();
     let hasPublicActivity = false;
@@ -99,6 +115,9 @@ export function ChatWindow() {
   }, [messages]);
   const isEmptySession = messages.length === 0;
   const lastMessage = messages[messages.length - 1];
+  const isGenerating = Boolean(lastMessage?.streaming
+    || lastMessage?.agui?.status === 'connecting'
+    || lastMessage?.agui?.status === 'running');
 
   useEffect(() => {
     if (activeSessionId && !isPersonal) {
@@ -117,22 +136,51 @@ export function ChatWindow() {
   );
 
   useEffect(() => {
+    followLatestRef.current = true;
+    setShowLatestButton(false);
     const container = messageListRef.current;
     if (!container) return;
-    scrollMessageListToBottom(container, 'smooth');
-  }, [activeSessionId, messages.length]);
+    scrollMessageListToBottom(container, 'auto');
+  }, [activeSessionId]);
 
   useEffect(() => {
-    if (!lastMessage?.streaming || !lastMessage.content) return;
     const frame = requestAnimationFrame(() => {
       const container = messageListRef.current;
-      if (!container) return;
+      if (!container || !followLatestRef.current) return;
       scrollMessageListToBottom(container, 'auto');
     });
     return () => cancelAnimationFrame(frame);
-  }, [activeSessionId, lastMessage?.content, lastMessage?.id, lastMessage?.streaming]);
+  }, [activeSessionId, messages.length, lastMessage?.content, lastMessage?.id, lastMessage?.streaming]);
+
+  useEffect(() => {
+    const content = messageContentRef.current;
+    if (!content || typeof ResizeObserver === 'undefined') return;
+    let frame: number | undefined;
+    const observer = new ResizeObserver(() => {
+      if (frame !== undefined) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        frame = undefined;
+        const container = messageListRef.current;
+        if (container && followLatestRef.current) scrollMessageListToBottom(container, 'auto');
+      });
+    });
+    observer.observe(content);
+    return () => {
+      observer.disconnect();
+      if (frame !== undefined) cancelAnimationFrame(frame);
+    };
+  }, [activeSessionId]);
+
+  function handleMessageScroll() {
+    const container = messageListRef.current;
+    if (!container) return;
+    const nearBottom = container.scrollHeight - container.clientHeight - container.scrollTop <= 64;
+    followLatestRef.current = nearBottom;
+    setShowLatestButton(!nearBottom);
+  }
 
   async function handleSend(text: string) {
+    if (sending || unresolvedAgui) return;
     const trimmed = text.trim();
     if (!trimmed && pendingFiles.length === 0) return;
     setInput('');
@@ -145,6 +193,46 @@ export function ChatWindow() {
       await sendMessage(trimmed || '上传账单文件', fileSet);
     } finally {
       setSending(false);
+    }
+  }
+
+  async function handleAguiCancel(runId: string) {
+    if (cancellingAguiRef.current) return;
+    cancellingAguiRef.current = true;
+    setCancellingAguiRunId(runId);
+    try {
+      await cancelAguiRun(runId);
+      notification.success({ message: '任务状态已更新', duration: 5, closable: true });
+    } catch (error) {
+      notification.error({ message: '停止未确认', description: error instanceof Error ? error.message : '请稍后重试', duration: 5, closable: true });
+    } finally {
+      cancellingAguiRef.current = false;
+      setCancellingAguiRunId(null);
+    }
+  }
+
+  async function confirmAguiApproval() {
+    const pending = aguiApprovalDecision;
+    if (!pending || decidingAguiApprovalRef.current) return;
+    decidingAguiApprovalRef.current = true;
+    setAguiApprovalDecision(null);
+    try {
+      const accepted = await decideAguiApproval(pending.runId, pending.decision);
+      if (!accepted) throw new Error('当前审批状态已变化，请刷新后重试。');
+      notification.success({
+        message: pending.decision === 'approve' ? '已同意执行' : '已拒绝执行',
+        duration: 5,
+        closable: true,
+      });
+    } catch (error) {
+      notification.error({
+        message: '审批操作失败',
+        description: error instanceof Error ? error.message : '请稍后重试',
+        duration: 5,
+        closable: true,
+      });
+    } finally {
+      decidingAguiApprovalRef.current = false;
     }
   }
 
@@ -205,6 +293,7 @@ export function ChatWindow() {
 
         <TextArea
           value={input}
+          aria-label="对话输入"
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={isCenter ? (isPersonal ? '咨询餐饮经营问题' : '向对账 Agent 提问') : '输入消息'}
@@ -218,7 +307,7 @@ export function ChatWindow() {
         <Button
           htmlType="button"
           onClick={() => handleSend(input)}
-          disabled={sending || (!input.trim() && pendingFiles.length === 0)}
+          disabled={sending || Boolean(unresolvedAgui) || (!input.trim() && pendingFiles.length === 0)}
           aria-label="发送消息"
           className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl border-0 bg-blue-500 p-0 text-white shadow-none hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer ${
             isCenter ? '' : 'mb-0.5 rounded-lg'
@@ -253,7 +342,7 @@ export function ChatWindow() {
   }
 
   return (
-    <div className="flex-1 flex min-h-0 flex-col bg-slate-50 min-w-0">
+    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-slate-50">
       {/* 顶部标题栏 */}
       <div className="hidden px-5 py-3 border-b border-slate-200 md:flex items-center justify-between bg-white shadow-sm">
         <h2 className="text-sm font-medium text-slate-700">{session?.title ?? '对话'}</h2>
@@ -297,6 +386,7 @@ export function ChatWindow() {
         ref={messageListRef}
         role="log"
         aria-label="对话消息"
+        onScroll={handleMessageScroll}
         className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-3 py-3 md:px-5 md:py-4"
       >
         {isEmptySession && (
@@ -327,6 +417,7 @@ export function ChatWindow() {
             </div>
           </div>
         )}
+        <div ref={messageContentRef}>
         {messages.map((msg) => {
           if (msg.role === 'tool_call' && hiddenToolCallIds.has(msg.id)) return null;
           const task = msg.taskId ? taskById.get(msg.taskId) : undefined;
@@ -338,6 +429,8 @@ export function ChatWindow() {
               <MessageBubble
                 message={msg}
                 sessionId={activeSessionId!}
+                canDelete={!unresolvedAgui}
+                animateText={isAgui && msg.id === lastMessage?.id}
                 hideStructuredContent={Boolean(msg.agentResponse)}
                 structuredContent={msg.role === 'assistant' && msg.agentResponse ? (
                   <ResponsePartsRenderer
@@ -362,10 +455,38 @@ export function ChatWindow() {
                       });
                       if (sent === false) throw new Error('clarification send failed');
                     }}
-                    promptDisabled={sending || Boolean(lastMessage?.streaming)}
+                    promptDisabled={sending || Boolean(lastMessage?.streaming) || Boolean(unresolvedAgui)}
                   />
                 ) : undefined}
               />
+            )}
+            {msg.agui && (
+              <div className="mb-4 ml-9 rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-600">
+                <p role="status" aria-live="polite">{AGUI_STATUS_LABELS[msg.agui.status]}</p>
+                {msg.agui.detail && <p className="mt-1 break-words text-xs text-slate-500">{msg.agui.detail}</p>}
+                {msg.agui.status === 'waiting_for_approval' && msg.agui.approval && canReconnectAguiRun(msg.agui.runId) && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Button htmlType="button" type="primary" onClick={() => setAguiApprovalDecision({
+                      runId: msg.agui!.runId,
+                      toolLabel: msg.agui!.approval!.toolLabel,
+                      decision: 'approve',
+                    })}>同意执行</Button>
+                    <Button htmlType="button" danger onClick={() => setAguiApprovalDecision({
+                      runId: msg.agui!.runId,
+                      toolLabel: msg.agui!.approval!.toolLabel,
+                      decision: 'reject',
+                    })}>拒绝</Button>
+                  </div>
+                )}
+                {canReconnectAguiRun(msg.agui.runId) && isAguiUnresolved(msg.agui.status) && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {msg.agui.status === 'disconnected' && <Button htmlType="button" disabled={cancellingAguiRunId === msg.agui.runId}
+                      onClick={() => { void reconnectAguiRun(msg.agui!.runId); }}>重连原任务</Button>}
+                    <Button htmlType="button" loading={cancellingAguiRunId === msg.agui.runId}
+                      onClick={() => { void handleAguiCancel(msg.agui!.runId); }}>停止本轮</Button>
+                  </div>
+                )}
+              </div>
             )}
             {msg.role === 'assistant' && !msg.streaming && !msg.agentResponse && (
               <LegacyIntentClarificationButtons content={msg.content} onChoose={(value) => sendMessage(value)} />
@@ -395,7 +516,24 @@ export function ChatWindow() {
           </div>
           );
         })}
+        </div>
       </div>
+      {showLatestButton && isGenerating && (
+        <Button
+          htmlType="button"
+          shape="circle"
+          size="large"
+          icon={<ArrowDownOutlined />}
+          aria-label="下滑到最底部"
+          title="下滑到最底部"
+          className="absolute bottom-[76px] right-4 z-20 border-slate-200 bg-white text-slate-600 shadow-lg motion-safe:animate-bounce md:bottom-[88px] md:right-6"
+          onClick={() => {
+            followLatestRef.current = true;
+            setShowLatestButton(false);
+            if (messageListRef.current) scrollMessageListToBottom(messageListRef.current, 'auto');
+          }}
+        />
+      )}
 
       {/* 重复数据确认弹窗 */}
       {dupConfirm && (
@@ -432,6 +570,18 @@ export function ChatWindow() {
           confirmLabel="确认取消"
           onConfirm={() => { void confirmResearchCancel(); }}
           onCancel={() => setCancelResearch(null)}
+        />
+      )}
+
+      {aguiApprovalDecision && (
+        <ConfirmDialog
+          title={aguiApprovalDecision.decision === 'approve' ? '确认执行操作' : '确认拒绝操作'}
+          message={aguiApprovalDecision.decision === 'approve'
+            ? `确认允许 Agent 执行“${aguiApprovalDecision.toolLabel}”吗？`
+            : `确认拒绝 Agent 执行“${aguiApprovalDecision.toolLabel}”吗？`}
+          confirmLabel={aguiApprovalDecision.decision === 'approve' ? '确认执行' : '确认拒绝'}
+          onConfirm={() => { void confirmAguiApproval(); }}
+          onCancel={() => setAguiApprovalDecision(null)}
         />
       )}
 

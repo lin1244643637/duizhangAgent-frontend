@@ -10,6 +10,7 @@ import type { AgentRunPublicEvent } from '../types/agentRun';
 import { TASK_RUN_STATUS_LABELS, type TaskRecord } from '../types/task';
 import { createId } from '../utils/id';
 import { useAgentRunEvents } from './useAgentRunEvents';
+import { useAguiChat } from './useAguiChat';
 
 interface ExistingSource {
   bill_platform: string | null;
@@ -44,6 +45,7 @@ interface ActiveStream {
 type SendMessageResult = boolean | null;
 
 export function useAgentChat(options: AgentChatOptions = {}) {
+  const agui = useAguiChat();
   const loadTasks = useTaskStore((state) => state.loadTasks);
   const durableEvents = useAgentRunEvents();
   const abortRef = useRef<AbortController | null>(null);
@@ -217,7 +219,10 @@ export function useAgentChat(options: AgentChatOptions = {}) {
     const { activeSessionId, createSession } = store;
     const localSessionId = activeSessionId ?? createSession();
 
-    const activeSession = store.sessions.find((s) => s.id === localSessionId);
+    const activeSession = useChatStore.getState().sessions.find((s) => s.id === localSessionId);
+    if (activeSession?.conversationMode === 'agui' && !files?.files.length) {
+      return agui.sendMessage(text, interaction);
+    }
     const backendSessionId = activeSession?.pending ? '' : localSessionId;
 
     const userContent = files?.files.length
@@ -517,7 +522,9 @@ export function useAgentChat(options: AgentChatOptions = {}) {
     durableEvents.cancel();
   }
 
-  return { sendMessage, approveAction, cancel, resumeResearchRun, cancelResearchRun };
+  return { sendMessage, approveAction, cancel, resumeResearchRun, cancelResearchRun,
+    reconnectAguiRun: agui.reconnect, cancelAguiRun: agui.cancel,
+    decideAguiApproval: agui.decideApproval, canReconnectAguiRun: agui.canReconnect };
 }
 
 function agentResponseActivityStatus(

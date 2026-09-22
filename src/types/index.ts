@@ -1,6 +1,7 @@
 export type MessageRole = 'user' | 'assistant' | 'tool_call';
 export * from './agentActivity';
 import type { AgentActivity } from './agentActivity';
+import type { AguiMessageState, ConversationMode } from './agui';
 export type ToolCallStatus = 'loading' | 'completed' | 'failed';
 export type MessageStageStatus = 'running' | 'completed' | 'failed';
 
@@ -257,6 +258,7 @@ export interface Message {
   createdAt?: number;
   toolCall?: ToolCallData;
   streaming?: boolean;
+  agui?: AguiMessageState;
   stage?: MessageStage | null;
   activity?: AgentActivity | null;
   taskId?: string;
@@ -274,6 +276,7 @@ export interface Session {
   createdAt: number;
   pending?: boolean;
   loaded?: boolean;
+  conversationMode?: ConversationMode;
 }
 
 export interface FileSet {
