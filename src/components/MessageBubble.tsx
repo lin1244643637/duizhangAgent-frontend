@@ -296,8 +296,8 @@ export function MessageBubble({ message, sessionId, hideStructuredContent = fals
   const reportDownloads = !isUser && contentForDisplay ? extractReportDownloads(contentForDisplay) : [];
   const knowledgeDraft = !isUser && contentForDisplay ? extractKnowledgeDraft(contentForDisplay) : null;
   const visibleContent = reportDownloads.length ? stripReportDownloadLinks(contentForDisplay) : contentForDisplay;
-  // Complex/incomplete markup bypasses animation; existing Markdown and structured renderers remain authoritative.
-  const complexMarkdown = /[|`<>]|^\s*~{3}|^(?: {4}|\t)\S/m.test(visibleContent);
+  // Code and HTML bypass animation; Markdown tables can reveal their text progressively.
+  const complexMarkdown = /[`<>]|^\s*~{3}|^(?: {4}|\t)\S/m.test(visibleContent);
   const canAnimate = animateText && !isUser && Boolean(message.agui)
     && ['connecting', 'running', 'completed'].includes(message.agui!.status)
     && !message.agentResponse && !complexMarkdown && !reportDownloads.length && !knowledgeDraft;

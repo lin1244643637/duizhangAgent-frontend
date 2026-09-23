@@ -55,6 +55,12 @@ afterEach(() => { vi.unstubAllEnvs(); });
 
 describe('AG-UI opt-in conversation', () => {
   it('posts the documented shape, deduplicates full event IDs and keeps legacy transports unused', async () => {
+    vi.mocked(apiFetch).mockImplementationOnce(async (_url, options) => {
+      const input = JSON.parse(options!.body as string) as AguiRunInput;
+      return new Response(JSON.stringify({ threadId: input.threadId, runId: input.runId, status: 'completed', content: '你好，世界' }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
     const stream = mockStream((input) => textFrames(input)
       + frame(input, 2, 'TEXT_MESSAGE_CONTENT', { messageId: 'text-1', delta: '你好' })
       + frame(input, 3, 'TEXT_MESSAGE_CONTENT', { messageId: 'text-1', delta: '，世界' })
@@ -72,7 +78,10 @@ describe('AG-UI opt-in conversation', () => {
     expect(inputAt().runId).toMatch(/^[A-Za-z0-9._-]{1,64}$/);
     expect(assistant()).toMatchObject({ content: '你好，世界', streaming: false, stage: null, agui: { status: 'completed' } });
     expect(useChatStore.getState().sessions[0]).toMatchObject({ id: 'thread-1', pending: false, loaded: true });
-    expect(apiFetch).not.toHaveBeenCalled();
+    expect(apiFetch).toHaveBeenCalledWith('/api/v1/agui/runs', expect.objectContaining({
+      method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(inputAt()),
+    }));
     expect(stream.release).toHaveBeenCalledTimes(1);
     expect(stream.locked()).toBe(false);
   });
@@ -96,7 +105,38 @@ describe('AG-UI opt-in conversation', () => {
         candidate_id: 'analytics:sales_summary',
       },
     });
-    expect(apiFetch).not.toHaveBeenCalled();
+    expect(apiFetch).toHaveBeenCalledWith('/api/v1/agui/runs', expect.objectContaining({
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    }));
+  });
+
+  it('uses the JSON result to complete missing text without repeating the run', async () => {
+    vi.mocked(apiFetch).mockImplementationOnce(async (_url, options) => {
+      const input = JSON.parse(options!.body as string) as AguiRunInput;
+      return new Response(JSON.stringify({
+        threadId: input.threadId, runId: input.runId,
+        status: 'completed', content: '你好，世界',
+      }), { headers: { 'Content-Type': 'application/json' } });
+    });
+    mockStream((input) => textFrames(input) + frame(input, 3, 'RUN_FINISHED'));
+
+    const { result } = renderHook(() => useAgentChat());
+    await act(async () => { expect(await result.current.sendMessage('查询')).toBe(true); });
+
+    expect(assistant()).toMatchObject({ content: '你好，世界', agui: { status: 'completed' } });
+    expect(apiStreamFetch).toHaveBeenCalledTimes(1);
+    expect(apiFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the completed streamed answer when JSON retrieval fails', async () => {
+    vi.mocked(apiFetch).mockRejectedValueOnce(new Error('snapshot unavailable'));
+    mockStream((input) => textFrames(input) + frame(input, 3, 'RUN_FINISHED'));
+
+    const { result } = renderHook(() => useAgentChat());
+    await act(async () => { expect(await result.current.sendMessage('查询')).toBe(true); });
+
+    expect(assistant()).toMatchObject({ content: '你好', agui: { status: 'completed' } });
+    expect(notification.error).not.toHaveBeenCalled();
   });
 
   it('stops at RUN_ERROR even when later events share the same network chunk', async () => {

@@ -1,6 +1,24 @@
-import { apiStreamFetch } from './client';
+import { apiFetch, apiStreamFetch } from './client';
 import { readSseData } from './sse';
 import { aguiRecord, type AguiEvent, type AguiRunInput } from '../types/agui';
+
+export async function fetchAguiRunResult(input: AguiRunInput, signal: AbortSignal): Promise<string> {
+  const response = await apiFetch('/api/v1/agui/runs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(input),
+    signal,
+  });
+  if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) {
+    throw new Error('无法读取本轮完整回复。');
+  }
+  const result = aguiRecord(await response.json());
+  if (result?.threadId !== input.threadId || result.runId !== input.runId
+    || result.status !== 'completed' || typeof result.content !== 'string') {
+    throw new Error('本轮完整回复与当前任务不匹配。');
+  }
+  return result.content;
+}
 
 export async function* streamAguiRun(
   input: AguiRunInput,

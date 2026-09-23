@@ -61,6 +61,31 @@ describe('display-only typewriter', () => {
     expect(result.current.text.length).toBeLessThan(text.length);
   });
 
+  it('reveals the first streamed chunk at a gentler pace', () => {
+    const { result, rerender } = start();
+    rerender({ text: '销售数据'.repeat(8), streaming: true, enabled: true });
+    advance(32);
+    expect(result.current.text.length).toBeGreaterThan(0);
+    expect(result.current.text.length).toBeLessThanOrEqual(18);
+  });
+
+  it('keeps pace with 32 characters every 80 ms without a large completion jump', () => {
+    const { result, rerender } = start();
+    let source = '';
+    for (let index = 0; index < 20; index++) {
+      source += '销售数据'.repeat(8);
+      rerender({ text: source, streaming: true, enabled: true });
+      advance(32);
+      advance(48);
+      expect(source.length - result.current.text.length).toBeLessThanOrEqual(32);
+    }
+    const shownBeforeFinish = result.current.text.length;
+    rerender({ text: source, streaming: false, enabled: true });
+    advance(600);
+    expect(result.current.text).toBe(source);
+    expect(source.length - shownBeforeFinish).toBeLessThanOrEqual(32);
+  });
+
   it('finishes playback within 600 ms of run completion without changing streaming', () => {
     const { result, rerender } = start();
     const text = '很长的回答'.repeat(1000);

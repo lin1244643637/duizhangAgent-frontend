@@ -54,7 +54,7 @@ export function useTypewriter(text: string, enabled: boolean, streaming: boolean
       if (elapsed >= 32 || now >= finishBy) {
         const remaining = boundaries.length - position;
         const count = now >= finishBy ? remaining
-          : Math.max(1, Math.floor(Math.min(elapsed, 64) / 1000 * Math.max(80, remaining / 0.4)));
+          : Math.max(1, Math.floor(Math.min(elapsed, 64) / 1000 * Math.max(550, remaining / 0.4)));
         position = Math.min(boundaries.length, position + count);
         publish(text.slice(0, boundaries[position - 1]));
         lastPaint.current = now;

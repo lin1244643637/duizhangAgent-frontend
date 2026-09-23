@@ -318,8 +318,24 @@ describe('MessageBubble table rendering', () => {
       },
     );
 
+    it('reveals a streamed sales table progressively and finishes the table after the run ends', () => {
+      const { rerender } = render(<MessageBubble message={running} sessionId="s" animateText />);
+      const firstChunk = '**9 月销售数据**\n\n| 日期 | 净实收 |\n| --- | ---: |\n| 9月1日 | ¥100.00 |';
+      const fullText = `${firstChunk}\n| 9月2日 | ¥200.00 |`;
+      rerender(<MessageBubble message={{ ...running, content: firstChunk }} sessionId="s" animateText />);
+      expect(screen.getByText('正在显示回复')).toBeTruthy();
+      tick();
+      rerender(<MessageBubble message={{ ...running, content: fullText }} sessionId="s" animateText />);
+      expect(screen.queryByText('9月2日')).toBeNull();
+      rerender(<MessageBubble message={{ ...running, content: fullText, streaming: false, agui: { runId: 'run-1', status: 'completed' } }} sessionId="s" animateText />);
+      expect(screen.queryByText('9月2日')).toBeNull();
+      tick(600);
+      expect(screen.getByText('9月2日')).toBeTruthy();
+      expect(screen.getByTitle('下载表格')).toBeTruthy();
+      expect(frames.size).toBe(0);
+    });
+
     it.each([
-      '| 门店 | 金额 |\n| --- | --- |\n| A | 1 |',
       '```ts\nconst n = 1;\n```',
       '<p>完整正文</p><script>alert(1)</script>',
     ])('bypasses animation for complex Markdown and retains sanitization: %s', (content) => {

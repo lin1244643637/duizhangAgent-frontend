@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { notification } from 'antd';
-import { streamAguiRun } from '../api/agui';
+import { fetchAguiRunResult, streamAguiRun } from '../api/agui';
 import { approveAgentRun, cancelAgentRun, type AgentRunApprovalDecision } from '../api/agentRuns';
 import { registerSessionCleanup } from '../api/sessionLifecycle';
 import { useChatStore } from '../store/chatStore';
@@ -178,6 +178,19 @@ export function useAguiChat() {
         if (terminal) break;
       }
       if (!terminal && !controller.signal.aborted) throw new Error('连接中断，尚未收到本轮结束事件。可重连原任务，请勿重复提交。');
+      if (terminal && messageFor(run)?.agui?.status === 'completed') {
+        try {
+          const content = await fetchAguiRunResult(run.input, controller.signal);
+          if (!controller.signal.aborted && runs.current.get(run.input.runId) === run && messageFor(run)?.content !== content) {
+            store.updateMessage(run.input.threadId, run.messageId, content);
+          }
+        } catch {
+          if (!controller.signal.aborted && !messageFor(run)?.content
+            && useChatStore.getState().activeSessionId === run.input.threadId) {
+            notification.error({ message: '完整回复读取失败', description: '事件流回复已保留，请稍后重试。', duration: 5, closable: true });
+          }
+        }
+      }
       if (terminal && messageFor(run)?.agui?.status === 'failed' && useChatStore.getState().activeSessionId === run.input.threadId) {
         notification.error({ message: '新对话处理失败', description: messageFor(run)?.agui?.detail, duration: 5, closable: true });
       }
