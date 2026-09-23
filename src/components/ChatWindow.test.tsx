@@ -45,9 +45,9 @@ vi.mock('../hooks/useAgentChat', () => ({
   }),
 }));
 vi.mock('./MessageBubble', () => ({
-  MessageBubble: ({ message, structuredContent }: { message: Message; structuredContent?: React.ReactNode }) => {
+  MessageBubble: ({ message, structuredContent, loadingAction }: { message: Message; structuredContent?: React.ReactNode; loadingAction?: React.ReactNode }) => {
     componentMocks.messageBubbleRender(message.id);
-    return <div data-testid={`message-${message.id}`}>{message.content}{structuredContent}</div>;
+    return <div data-testid={`message-${message.id}`}>{message.content}{structuredContent}{loadingAction}</div>;
   },
 }));
 vi.mock('./TaskCard', () => ({
@@ -219,6 +219,26 @@ describe('ChatWindow streaming performance', () => {
     expect(screen.queryByRole('group', { name: '对话模式' })).toBeNull();
   });
 
+  it('keeps active AG-UI progress compact and exposes stop as a secondary action', async () => {
+    act(() => { useChatStore.setState({ sessions: [{
+      id: 'session-1', title: '分析会话', createdAt: 0, conversationMode: 'agui', messages: [userMessage, {
+        ...assistantMessage,
+        taskId: undefined,
+        content: '',
+        agui: { runId: 'agui-running', status: 'connecting', detail: '正在连接' },
+      }],
+    }] }); });
+
+    render(<ChatWindow />);
+
+    expect(screen.queryByText('正在连接')).toBeNull();
+    expect(screen.queryByText('正在处理')).toBeNull();
+    const stop = screen.getByRole('button', { name: '停止本轮' });
+    expect(stop.textContent).toContain('停止');
+    await act(async () => { fireEvent.click(stop); });
+    expect(componentMocks.cancelAguiRun).toHaveBeenCalledWith('agui-running');
+  });
+
   it('shows disconnected-run recovery without enabling duplicate sends', async () => {
     act(() => { useChatStore.setState({ sessions: [{
       id: 'session-1', title: '实验会话', createdAt: 0, conversationMode: 'agui', messages: [userMessage, {
@@ -236,6 +256,34 @@ describe('ChatWindow streaming performance', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: '停止本轮' })); });
     expect(componentMocks.cancelAguiRun).toHaveBeenCalledWith('agui-1');
     expect(componentMocks.notificationSuccess).toHaveBeenCalledWith(expect.objectContaining({ duration: 5, closable: true }));
+  });
+
+  it('shows a full-width failed-run recovery and retries the originating prompt', async () => {
+    act(() => { useChatStore.setState({ sessions: [{
+      id: 'session-1', title: '失败会话', createdAt: 0, conversationMode: 'agui', messages: [{
+        ...userMessage,
+        taskId: 'agui-failed',
+      }, {
+        ...assistantMessage,
+        taskId: 'agui-failed',
+        content: '',
+        streaming: false,
+        agui: { runId: 'agui-failed', status: 'failed', detail: 'graph_failed' },
+      }],
+    }] }); });
+    act(() => { useTaskStore.setState({
+      tasks: [{ task_id: 'agui-failed', task_type: 'general_graph', session_id: 'session-1', status: 'failed' } as never],
+    }); });
+    render(<ChatWindow />);
+
+    const failureStatus = screen.getByRole('status').parentElement?.parentElement?.parentElement;
+    expect(failureStatus?.className).toContain('w-[calc(100%_-_2.5rem)]');
+    expect(screen.getByText('分析服务未能完成本次请求。你可以重新生成，或稍后再试。')).toBeTruthy();
+    expect(screen.getByText('查看错误详情')).toBeTruthy();
+    expect(screen.queryByTestId('task-card')).toBeNull();
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '重新生成' })); });
+    expect(componentMocks.sendMessage).toHaveBeenCalledWith('最近营收如何？', undefined);
   });
 
   it('confirms an AG-UI approval before resuming the same run', async () => {
@@ -307,6 +355,17 @@ describe('ChatWindow streaming performance', () => {
     expect(screen.getByTestId('query-question').textContent).toBe('最近营收如何？');
   });
 
+  it('hides general conversation task cards from the chat transcript', () => {
+    useTaskStore.setState({
+      tasks: [{ task_id: 'task-1', task_type: 'general_graph', session_id: 'session-1', status: 'completed' } as never],
+    });
+
+    render(<ChatWindow />);
+
+    expect(screen.queryByTestId('task-card')).toBeNull();
+    expect(screen.getByTestId('message-assistant-1')).toBeTruthy();
+  });
+
   it('keeps auto-scroll inside the message list for stream batches and new messages', () => {
     const scrollIntoView = vi.fn();
     const scrollTo = vi.fn();
@@ -353,7 +412,7 @@ describe('ChatWindow streaming performance', () => {
     act(() => useChatStore.getState().appendAssistantChunk('session-1', 'assistant-1', '新增片段'));
     expect(scrollTo).not.toHaveBeenCalled();
     const jumpButton = screen.getByRole('button', { name: '下滑到最底部' });
-    expect(jumpButton.className).toContain('animate-bounce');
+    expect(jumpButton.className).toContain('chat-jump-latest');
     fireEvent.click(jumpButton);
     expect(scrollTo).toHaveBeenCalledWith({ top: 2000, behavior: 'auto' });
     expect(screen.queryByRole('button', { name: '下滑到最底部' })).toBeNull();

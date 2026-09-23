@@ -187,10 +187,28 @@ describe('ResponsePartsRenderer', () => {
     );
 
     expect(screen.getByText('每日销售')).toBeTruthy();
-    expect(screen.getByText('31 行')).toBeTruthy();
+    expect(screen.getByText('当前展示 2 / 31 行')).toBeTruthy();
+    expect(screen.queryByTitle('下载表格')).toBeNull();
+    expect(screen.getByTitle('全屏展示')).toBeTruthy();
     expect(screen.getByText('2026-08-01')).toBeTruthy();
     expect(screen.getByText('¥1,234.50')).toBeTruthy();
     expect(screen.getByText('2026-08-02')).toBeTruthy();
+  });
+
+  it('uses the shared business table actions when all structured rows are available', () => {
+    render(<ResponsePartsRenderer response={response({
+      parts: [{
+        kind: 'table',
+        title: '门店经营明细',
+        row_count: 2,
+        columns: [{ key: 'store', label: '门店' }],
+        preview_rows: [{ store: '凤八店' }, { store: '凤十二店' }],
+      }],
+    })} />);
+
+    expect(screen.getByText('2 行')).toBeTruthy();
+    expect(screen.getByTitle('全屏展示')).toBeTruthy();
+    expect(screen.getByTitle('下载表格')).toBeTruthy();
   });
 
   it('shows a clear no-data hint for empty results', () => {

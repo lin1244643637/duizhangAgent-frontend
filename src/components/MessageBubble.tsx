@@ -17,6 +17,7 @@ interface Props {
   sessionId: string;
   hideStructuredContent?: boolean;
   structuredContent?: ReactNode;
+  loadingAction?: ReactNode;
   canDelete?: boolean;
   animateText?: boolean;
 }
@@ -277,7 +278,7 @@ function extractKnowledgeDraft(content: string): KnowledgeDraft | null {
   };
 }
 
-export function MessageBubble({ message, sessionId, hideStructuredContent = false, structuredContent, canDelete = true, animateText = false }: Props) {
+export function MessageBubble({ message, sessionId, hideStructuredContent = false, structuredContent, loadingAction, canDelete = true, animateText = false }: Props) {
   const { deleteMessagePair } = useChatStore();
   const isUser = message.role === 'user';
   const [copied, setCopied] = useState(false);
@@ -286,6 +287,7 @@ export function MessageBubble({ message, sessionId, hideStructuredContent = fals
   const [notice, setNotice] = useState<FloatingNoticeState | null>(null);
   const [expandedMarkdownTables, setExpandedMarkdownTables] = useState<Record<string, boolean>>({});
   const [longContentExpanded, setLongContentExpanded] = useState(false);
+  const [showLoadingStage, setShowLoadingStage] = useState(false);
 
   const shouldHideContent = hideStructuredContent && !isUser && Boolean(message.agentResponse) && !message.streaming;
   const hasPublicActivity = !isUser && Boolean(message.activity);
@@ -314,6 +316,13 @@ export function MessageBubble({ message, sessionId, hideStructuredContent = fals
     setKnowledgeSaved(false);
     setNotice(null);
   }, [message.id]);
+
+  useEffect(() => {
+    setShowLoadingStage(false);
+    if (!message.streaming || !message.agui) return;
+    const timer = window.setTimeout(() => setShowLoadingStage(true), 3000);
+    return () => window.clearTimeout(timer);
+  }, [message.agui?.runId, message.id, message.streaming]);
 
   useEffect(() => {
     if (!notice) return;
@@ -392,50 +401,63 @@ export function MessageBubble({ message, sessionId, hideStructuredContent = fals
     await downloadReport(href);
   }
 
-  // 首次 loading：内容尚空，显示"分析中"动画
+  // 首次 loading：AG-UI 只保留一个紧凑状态，较久后再补充具体阶段。
   function renderLoading() {
-    const stageLabel = message.stage?.label || '分析中';
-    const stageDetail = message.stage?.detail;
+    const stageLabel = message.agui ? '分析中' : (message.stage?.label || '分析中');
+    const delayedStage = showLoadingStage && message.stage?.label && message.stage.label !== stageLabel
+      ? message.stage.label
+      : null;
     return (
-      <span className="inline-flex items-start gap-2 text-slate-500">
-        <span className="mt-2 inline-flex gap-0.5 text-blue-500">
-          <span className="w-1 h-1 rounded-full bg-current animate-bounce" style={{ animationDelay: '0ms' }} />
-          <span className="w-1 h-1 rounded-full bg-current animate-bounce" style={{ animationDelay: '150ms' }} />
-          <span className="w-1 h-1 rounded-full bg-current animate-bounce" style={{ animationDelay: '300ms' }} />
+      <span className="inline-flex min-h-8 items-center gap-2 text-sm text-slate-500">
+        <span
+          aria-hidden="true"
+          className="h-5 w-5 shrink-0 rounded-full border-2 border-blue-200 border-t-blue-600 shadow-sm motion-safe:animate-spin"
+        />
+        <span role="status" aria-live="polite" className="font-medium text-slate-600">
+          {stageLabel}
+          {delayedStage && <span className="font-normal text-slate-400"> · {delayedStage}</span>}
         </span>
-        <span className="min-w-0">
-          <span className="block font-medium text-slate-600">{stageLabel}</span>
-          {stageDetail && <span className="mt-0.5 block text-xs text-slate-400">{stageDetail}</span>}
-        </span>
+        {loadingAction}
       </span>
     );
   }
 
+  const hasVisibleMessage = Boolean(
+    isUser
+    || hasPublicActivity
+    || contentForDisplay
+    || reportDownloads.length > 0
+    || structuredContent
+    || message.streaming,
+  );
+
+  if (!hasVisibleMessage) return null;
+
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-3`}>
+    <div className={`group/message mb-7 flex ${isUser ? 'justify-end' : 'justify-start'}`}>
       {!isUser && (
-        <div className="w-7 h-7 rounded-lg bg-blue-500 flex items-center justify-center text-white text-xs font-semibold mr-2 flex-shrink-0 mt-1">
+        <div className="mr-3 mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-blue-600 text-[10px] font-semibold text-white shadow-sm shadow-blue-200">
           AI
         </div>
       )}
 
       <div
         className={`flex min-w-0 flex-col ${isUser ? 'items-end' : 'items-start'} ${hasPublicActivity || (!isUser && structuredContent) ? 'gap-2' : ''} ${
-          hasTable && !isUser
-            ? 'w-full max-w-[960px] sm:w-[75%]'
-            : 'max-w-[86%] md:max-w-[75%]'
+          !isUser
+            ? 'w-full max-w-[calc(100%_-_2.5rem)]'
+            : 'max-w-[92%] md:max-w-[78%]'
         }`}
       >
         {hasPublicActivity && <AgentActivitySummary activity={message.activity!} />}
         {(contentForDisplay || reportDownloads.length > 0 || (message.streaming && !hasPublicActivity)) && (
           <div
             aria-live={animateText ? 'off' : undefined}
-            className={`min-w-0 rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+            className={`min-w-0 ${
               hasTable && !isUser ? 'w-full max-w-full overflow-hidden' : ''
             } ${
               isUser
-                ? 'bg-blue-500 text-white rounded-br-sm'
-                : 'bg-white text-slate-700 rounded-bl-sm border border-slate-200 shadow-sm'
+                ? 'message-user rounded-2xl rounded-br-md bg-blue-600 px-4 py-3 text-sm leading-6 text-white shadow-sm shadow-blue-200/70'
+                : 'message-assistant w-full py-0.5 text-[15px] leading-7 text-slate-800'
             }`}
           >
             {contentForDisplay ? (
@@ -482,7 +504,7 @@ export function MessageBubble({ message, sessionId, hideStructuredContent = fals
                         dangerouslySetInnerHTML={{ __html: renderedMarkdown }}
                       />
                       {canCollapseLongContent && !longContentExpanded && (
-                        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-white to-transparent" />
+                        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#f7f9fc] to-transparent" />
                       )}
                     </div>
                     {canCollapseLongContent && (
@@ -536,32 +558,34 @@ export function MessageBubble({ message, sessionId, hideStructuredContent = fals
           )}
           </div>
         )}
-        {animateText && !isUser && (
+        {animateText && !isUser && playback.isTyping && (
           <div className="flex max-w-full flex-wrap items-center gap-2 px-1 text-xs text-slate-500">
             <span role="status" aria-live="polite">
-              {playback.isTyping ? (message.streaming ? '正在显示回复' : '回答已生成，正在显示')
-                : message.agui?.status === 'completed' && message.content ? '回复已完整显示' : ''}
+              {message.streaming ? '正在显示回复' : '回答已生成，正在显示'}
             </span>
           </div>
         )}
         {structuredContent}
+        {message.streaming && loadingAction && (contentForDisplay || hasPublicActivity || structuredContent) && (
+          <div className="flex min-h-8 items-center px-1">{loadingAction}</div>
+        )}
 
         {messageTime && (
-          <div className={`mt-1 px-1 text-[11px] leading-none text-slate-400 ${isUser ? 'text-right' : 'text-left'}`}>
+          <div className={`mt-1 px-1 text-[11px] leading-none text-slate-400 transition-opacity md:opacity-0 md:group-hover/message:opacity-100 md:group-focus-within/message:opacity-100 ${isUser ? 'text-right' : 'text-left'}`}>
             {messageTime}
           </div>
         )}
 
         {/* 接收和动画展示结束后显示操作按钮；复制始终使用完整原文。 */}
         {!message.streaming && !playback.isTyping && (
-          <div className={`mt-1 flex max-w-full flex-nowrap items-center gap-1.5 ${isUser ? 'self-end' : 'self-start'}`}>
+          <div className={`mt-1 flex max-w-full flex-nowrap items-center gap-1.5 transition-opacity md:opacity-0 md:group-hover/message:opacity-100 md:group-focus-within/message:opacity-100 ${isUser ? 'self-end' : 'self-start'}`}>
             {knowledgeDraft && !isUser && (
               <button
                 type="button"
                 onClick={handleSaveKnowledgeDraft}
                 disabled={knowledgeSaving || knowledgeSaved}
                 title={`保存到知识库：${knowledgeDraft.categoryLabel}`}
-                className="inline-flex h-8 shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2.5 text-xs text-emerald-600 transition-colors hover:bg-emerald-50 disabled:cursor-default disabled:text-emerald-400"
+                className="inline-flex h-11 shrink-0 items-center gap-1 whitespace-nowrap rounded-lg px-2.5 text-xs text-emerald-600 transition-colors hover:bg-emerald-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400 disabled:cursor-default disabled:text-emerald-400 md:h-8"
               >
                 <svg className="w-3 h-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                   <path d="M9 2a1 1 0 00-1 1v5H3a1 1 0 100 2h5v5a1 1 0 102 0v-5h5a1 1 0 100-2h-5V3a1 1 0 00-1-1z" />
@@ -573,7 +597,7 @@ export function MessageBubble({ message, sessionId, hideStructuredContent = fals
               type="button"
               onClick={handleCopy}
               title="复制内容"
-              className="inline-flex h-8 shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2.5 text-xs text-slate-500 transition-colors hover:bg-blue-50 hover:text-blue-600"
+              className="inline-flex h-11 shrink-0 items-center gap-1 whitespace-nowrap rounded-lg px-2.5 text-xs text-slate-500 transition-colors hover:bg-blue-50 hover:text-blue-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400 md:h-8"
             >
               {copied ? (
                 <>
@@ -596,7 +620,7 @@ export function MessageBubble({ message, sessionId, hideStructuredContent = fals
               type="button"
               onClick={handleDelete}
               title="删除问答"
-              className="inline-flex h-8 shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2.5 text-xs text-slate-500 transition-colors hover:bg-red-50 hover:text-red-600"
+              className="inline-flex h-11 shrink-0 items-center gap-1 whitespace-nowrap rounded-lg px-2.5 text-xs text-slate-500 transition-colors hover:bg-red-50 hover:text-red-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-400 md:h-8"
             >
               <svg className="w-3 h-3" viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />

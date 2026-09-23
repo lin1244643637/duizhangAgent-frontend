@@ -74,6 +74,36 @@ describe('chatStore optimistic deletion', () => {
 });
 
 describe('chatStore structured agent responses', () => {
+  it('restores a persisted AG-UI failure from history metadata', async () => {
+    useChatStore.setState({
+      sessions: [{ id: 'session-1', title: '失败历史', messages: [], createdAt: 0, loaded: false }],
+      activeSessionId: 'session-1',
+    });
+    mocks.apiFetch.mockResolvedValueOnce({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        session_id: 'session-1',
+        title: '失败历史',
+        messages: [{
+          id: 'assistant-failed', role: 'assistant', content: '', task_id: 'run-1',
+          created_at: '2026-09-23T01:00:00+08:00',
+          metadata: {
+            delivery_status: 'failed', execution_path: 'general_graph',
+            run_id: 'run-1', failure_detail: '模型服务暂时未响应，请稍后重试。',
+          },
+        }],
+      }),
+    });
+
+    await useChatStore.getState().loadSessionHistory('session-1');
+
+    expect(useChatStore.getState().sessions[0]?.messages[0]).toMatchObject({
+      id: 'assistant-failed',
+      taskId: 'run-1',
+      agui: { runId: 'run-1', status: 'failed', detail: '模型服务暂时未响应，请稍后重试。' },
+    });
+  });
+
   it.each(['completed', 'partial', 'empty', 'unavailable', 'failed'] as const)(
     'parses a bounded %s terminal activity with a server wall-clock total',
     (status) => {

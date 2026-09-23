@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { apiFetch, apiStreamFetch } from '../api/client';
 import { getQueryEvidence } from '../api/connectors';
+import { useAuthStore } from '../store/authStore';
 import { useChatStore } from '../store/chatStore';
 import { useTaskStore } from '../store/taskStore';
 import type { TaskRecord } from '../types/task';
@@ -45,6 +46,7 @@ function agentRunResponse(status: 'queued' | 'cancelled', eventCursor: number) {
 describe('useAgentChat stage lifecycle', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useAuthStore.setState({ workspaceType: 'tenant', tenantId: 'tenant-1', activeWorkspaceId: 'tenant-1' });
     useChatStore.setState({
       activeSessionId: 'session-1',
       sessions: [{
@@ -76,6 +78,32 @@ describe('useAgentChat stage lifecycle', () => {
     expect(sendResult).toBe(false);
     const messages = useChatStore.getState().sessions[0]?.messages ?? [];
     expect(messages[messages.length - 1]?.content).toContain('[请求失败，请重试]');
+  });
+
+  it('uses the legacy chat endpoint for a personal workspace even when AG-UI is enabled', async () => {
+    useAuthStore.setState({ workspaceType: 'personal' });
+    useChatStore.setState({
+      activeSessionId: 'session-1',
+      sessions: [{
+        id: 'session-1',
+        title: '个人会话',
+        messages: [],
+        createdAt: 0,
+        pending: false,
+        conversationMode: 'agui',
+      }],
+    });
+    const done = new TextEncoder().encode('data: [DONE]\n\n');
+    vi.mocked(apiFetch).mockResolvedValue({
+      ok: true,
+      body: { getReader: () => ({ read: vi.fn().mockResolvedValueOnce({ done: false, value: done }) }) },
+    } as unknown as Response);
+    const { result } = renderHook(() => useAgentChat());
+
+    await act(async () => { await result.current.sendMessage('你好'); });
+
+    expect(apiFetch).toHaveBeenCalledWith('/api/v1/chat', expect.objectContaining({ method: 'POST' }));
+    expect(apiFetch).not.toHaveBeenCalledWith('/api/v1/agui/runs', expect.anything());
   });
 
   it('treats a terminal SSE failure as final and drops later events', async () => {

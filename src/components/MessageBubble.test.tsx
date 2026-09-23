@@ -169,6 +169,29 @@ describe('MessageBubble table rendering', () => {
     expect(screen.getByText('旧阶段仍在处理')).toBeTruthy();
   });
 
+  it('shows one compact AG-UI loading state and delays the specific stage', () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = render(<MessageBubble message={{
+        id: 'assistant-agui', role: 'assistant', content: '', streaming: true,
+        stage: { code: 'query', label: '正在查询经营数据', status: 'running' },
+        agui: { runId: 'run-1', status: 'connecting', detail: '正在连接' },
+      }} sessionId="session-1" loadingAction={<button type="button">停止</button>} />);
+
+      expect(screen.getByRole('status').textContent).toBe('分析中');
+      expect(screen.queryByText(/正在连接/)).toBeNull();
+      expect(screen.queryByText(/正在查询经营数据/)).toBeNull();
+      expect(container.querySelectorAll('.animate-bounce')).toHaveLength(0);
+      expect(container.querySelectorAll('[class*="animate-spin"]')).toHaveLength(1);
+      expect(screen.getByRole('button', { name: '停止' })).toBeTruthy();
+
+      act(() => { vi.advanceTimersByTime(3000); });
+      expect(screen.getByRole('status').textContent).toContain('正在查询经营数据');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('suppresses the legacy loading bubble for a streaming public activity, including research activity', () => {
     render(<MessageBubble message={{
       id: 'assistant-research', role: 'assistant', content: '', streaming: true,
@@ -181,6 +204,18 @@ describe('MessageBubble table rendering', () => {
 
     expect(screen.getByRole('button', { name: /正在研究/ })).toBeTruthy();
     expect(screen.queryByText('分析中')).toBeNull();
+  });
+
+  it('does not render an empty assistant shell when the parent owns the transport status', () => {
+    const { container } = render(<MessageBubble message={{
+      id: 'assistant-empty',
+      role: 'assistant',
+      content: '',
+      streaming: false,
+      agui: { runId: 'run-empty', status: 'failed', detail: 'graph_failed' },
+    }} sessionId="session-1" />);
+
+    expect(container.firstChild).toBeNull();
   });
 
   it('keeps activity and structured response as ordered siblings before message actions', () => {
@@ -260,7 +295,7 @@ describe('MessageBubble table rendering', () => {
       expect(container.querySelector('.markdown-body')?.closest('[aria-live="off"]')).not.toBeNull();
       expect(screen.queryByRole('button', { name: '直接显示全部' })).toBeNull();
       tick(600);
-      expect(screen.getByText('回复已完整显示')).toBeTruthy();
+      expect(screen.queryByText('回复已完整显示')).toBeNull();
       expect(container.querySelector('.max-h-72')).not.toBeNull();
       fireEvent.click(screen.getByRole('button', { name: '展开全文' }));
       expect(container.querySelector('.max-h-72')).toBeNull();

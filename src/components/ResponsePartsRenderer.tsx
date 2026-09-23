@@ -1,8 +1,10 @@
 import { useState } from 'react';
+import { RightOutlined } from '@ant-design/icons';
 import { Alert, Button, Table, notification, type TableColumnsType } from 'antd';
 
 import type { AgentResponseAction, AgentResponsePart, AgentResponsePayload } from '../types';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { TableDisplayFrame, type TableDisplayData } from './TableDisplayFrame';
 
 const MOBILE_PREVIEW_ROW_LIMIT = 3;
 const DESKTOP_PREVIEW_ROW_LIMIT = 10;
@@ -90,6 +92,10 @@ function TablePart({ part, action, expandable, tableKey }: { part: AgentResponse
   const collapsedRowLimit = isMobile ? MOBILE_PREVIEW_ROW_LIMIT : DESKTOP_PREVIEW_ROW_LIMIT;
   const canToggleRows = expandable && rows.length > collapsedRowLimit;
   const visibleRows = canToggleRows && !expanded ? rows.slice(0, collapsedRowLimit) : rows;
+  const hasCompleteRows = typeof part.row_count !== 'number' || part.row_count <= rows.length;
+  const rowCountLabel = typeof part.row_count === 'number'
+    ? hasCompleteRows ? `${part.row_count} 行` : `当前展示 ${rows.length} / ${part.row_count} 行`
+    : `${rows.length} 行`;
   const dataSource: TableRow[] = visibleRows.map((row, index) => ({ ...row, __rowKey: `${tableKey}-${index}` }));
   const antdColumns: TableColumnsType<TableRow> = columns.map((column) => ({
     title: column.label,
@@ -100,25 +106,39 @@ function TablePart({ part, action, expandable, tableKey }: { part: AgentResponse
 
   if (columns.length === 0) return null;
 
+  const exportTables: TableDisplayData[] = [{
+    title: part.title,
+    headers: columns.map(column => column.label),
+    rows: rows.map(row => columns.map(column => tableCell(row[column.key], column))),
+  }];
+
+  const toolbarExtra = (
+    <>
+      <span className="whitespace-nowrap text-xs text-slate-400">{rowCountLabel}</span>
+      {canToggleRows && (
+        <Button
+          type="link"
+          size="small"
+          className="shrink-0 px-1 text-xs text-blue-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
+          onClick={() => setExpanded(value => !value)}
+        >
+          {expanded ? '收回明细' : action ?? '展开明细'}
+        </Button>
+      )}
+    </>
+  );
+
   return (
-    <section className="mt-2 overflow-hidden rounded-xl border border-slate-200 bg-white" aria-label={part.title || '数据表'}>
-      <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-3 py-2">
-        <div className="min-w-0">
-          {part.title && <h3 className="truncate text-sm font-medium text-slate-700">{part.title}</h3>}
-          {typeof part.row_count === 'number' && <p className="text-xs text-slate-400">{part.row_count} 行</p>}
-        </div>
-        {canToggleRows && (
-          <Button
-            type="link"
-            size="small"
-            className="shrink-0 px-1 text-xs text-blue-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
-            onClick={() => setExpanded(value => !value)}
-          >
-            {expanded ? '收回明细' : action ?? '展开明细'}
-          </Button>
-        )}
-      </div>
-      <div className="overflow-x-auto">
+    <section className="mt-2" aria-label={part.title || '数据表'}>
+      <TableDisplayFrame
+        title={part.title || '数据表'}
+        filename={part.title || '数据表'}
+        className="rounded-xl border border-slate-200 bg-white"
+        tableClassName="overflow-x-auto"
+        exportTables={exportTables}
+        toolbarExtra={toolbarExtra}
+        showDownload={hasCompleteRows}
+      >
         <Table<TableRow>
           columns={antdColumns}
           dataSource={dataSource}
@@ -127,7 +147,7 @@ function TablePart({ part, action, expandable, tableKey }: { part: AgentResponse
           size="small"
           scroll={{ x: 'max-content' }}
         />
-      </div>
+      </TableDisplayFrame>
     </section>
   );
 }
@@ -143,7 +163,7 @@ function InsightPart({ part }: { part: AgentResponsePart }) {
 
   const label = part.title || '经营结论';
   return (
-    <section className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+    <section className="border-l-2 border-slate-200 py-1 pl-3">
       {part.title && <h3 className="mb-2 text-sm font-medium text-slate-700">{part.title}</h3>}
       <ul className="space-y-2 text-sm text-slate-700" aria-label={label}>
         {part.items.map((item, index) => (
@@ -201,15 +221,18 @@ export function ResponsePartsRenderer({ response, onPrompt, onAction, promptDisa
   }
 
   return (
-    <div className="space-y-2">
+    <div className="w-full space-y-3">
       {notificationContextHolder}
       {RESULT_STATUS_LABELS[response.result_status] && (
-        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500">{RESULT_STATUS_LABELS[response.result_status]}</div>
+        <div className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
+          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+          {RESULT_STATUS_LABELS[response.result_status]}
+        </div>
       )}
       {response.parts.map((part, index) => {
         if (part.kind === 'summary' && part.metrics?.length) {
           return (
-            <section key={`summary-${index}`} className="rounded-xl border border-slate-200 bg-white px-3 py-2" aria-label={part.title || '汇总'}>
+            <section key={`summary-${index}`} className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3 shadow-sm" aria-label={part.title || '汇总'}>
               {part.title && <h3 className="mb-2 text-sm font-medium text-slate-700">{part.title}</h3>}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {part.metrics.map((metric) => (
@@ -242,19 +265,22 @@ export function ResponsePartsRenderer({ response, onPrompt, onAction, promptDisa
 
         if (part.kind === 'clarification' && part.message) {
           return (
-            <section key={`clarification-${index}`} className="space-y-2 text-sm text-slate-700">
-              <p>{part.message}</p>
+            <section key={`clarification-${index}`} className="space-y-3 rounded-2xl border border-slate-200/80 bg-white px-4 py-3.5 text-sm text-slate-700 shadow-sm">
+              <p className="whitespace-pre-line leading-6">{part.message}</p>
               {clarificationActions.length > 0 && (
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                   {clarificationActions.map((action) => {
                     const isPending = pendingActionId === action.action_id;
                     return (
                       <Button
                         key={action.action_id}
-                        size="small"
+                        autoInsertSpace={false}
+                        icon={<RightOutlined aria-hidden="true" />}
+                        iconPlacement="end"
                         disabled={promptDisabled || payloadActionsBlocked || Boolean(pendingActionId) || !onAction}
                         loading={isPending}
                         onClick={() => handleClarification(action)}
+                        className="min-h-11 w-full justify-between whitespace-normal rounded-xl border-blue-200 bg-blue-50 px-3.5 py-2 text-left text-sm font-medium leading-5 text-blue-700 shadow-none transition-all duration-200 hover:border-blue-300 hover:bg-blue-100 focus-visible:ring-2 focus-visible:ring-blue-200 sm:w-auto"
                       >
                         {action.label}
                       </Button>
@@ -270,17 +296,20 @@ export function ResponsePartsRenderer({ response, onPrompt, onAction, promptDisa
         return null;
       })}
       {promptActions.length > 0 && (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           {promptActions.map((action) => {
             const message = action.params?.message as string;
             const isPending = pendingActionId === action.action_id;
             return (
               <Button
                 key={action.action_id}
-                size="small"
+                autoInsertSpace={false}
+                icon={<RightOutlined aria-hidden="true" />}
+                iconPlacement="end"
                 disabled={promptDisabled || payloadActionsBlocked || Boolean(pendingActionId) || !onPrompt}
                 loading={isPending}
                 onClick={() => handlePrompt(action.action_id, message)}
+                className="min-h-11 w-full justify-between whitespace-normal rounded-xl border-slate-200 bg-white px-3.5 py-2 text-left text-sm font-medium leading-5 text-slate-700 shadow-sm transition-all duration-200 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 focus-visible:ring-2 focus-visible:ring-blue-200 sm:w-auto"
               >
                 {action.label}
               </Button>

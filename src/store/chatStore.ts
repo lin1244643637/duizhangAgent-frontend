@@ -10,6 +10,10 @@ import { isAguiEnabled, type AguiMessageState, type ConversationMode } from '../
 type ConnectorMessageMetadata = {
   agent_response?: unknown;
   agent_activity?: unknown;
+  delivery_status?: unknown;
+  execution_path?: unknown;
+  failure_detail?: unknown;
+  run_id?: unknown;
   connector_query?: {
     evidence?: QueryEvidence | null;
     knowledge_suggestion?: KnowledgeSuggestion | null;
@@ -218,12 +222,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
         .filter((m) => m.role === 'user' || m.role === 'assistant')
         .map((m) => {
           const connectorQuery = m.metadata?.connector_query;
+          const runId = typeof m.metadata?.run_id === 'string' ? m.metadata.run_id : m.task_id;
+          const agui: AguiMessageState | undefined = m.role === 'assistant'
+            && m.metadata?.execution_path === 'general_graph'
+            && m.metadata.delivery_status === 'failed'
+            && typeof runId === 'string'
+            ? {
+                runId,
+                status: 'failed',
+                ...(typeof m.metadata.failure_detail === 'string' && m.metadata.failure_detail.trim()
+                  ? { detail: m.metadata.failure_detail.trim() }
+                  : {}),
+              }
+            : undefined;
           return {
             id: m.id,
             role: m.role as 'user' | 'assistant',
             content: m.content,
             createdAt: parseBeijingTime(m.created_at),
             taskId: m.task_id ?? undefined,
+            agui,
             agentResponse: parseAgentResponsePayload(m.metadata?.agent_response) ?? undefined,
             activity: m.role === 'assistant' ? parseAgentActivity(m.metadata?.agent_activity) ?? undefined : undefined,
             evidence: connectorQuery?.evidence ?? undefined,

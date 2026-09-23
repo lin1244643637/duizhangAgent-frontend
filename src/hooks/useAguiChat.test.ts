@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiFetch, apiStreamFetch } from '../api/client';
 import { notification } from 'antd';
 import { clearSessionState } from '../api/sessionLifecycle';
+import { useAuthStore } from '../store/authStore';
 import { useChatStore } from '../store/chatStore';
 import { useAgentChat } from './useAgentChat';
 import type { AguiRunInput } from '../types/agui';
@@ -45,6 +46,7 @@ function mockStream(events: (input: AguiRunInput) => string, hold = false) {
 beforeEach(() => {
   vi.resetAllMocks();
   vi.stubEnv('VITE_AGUI_CHAT_ENABLED', 'true');
+  useAuthStore.setState({ workspaceType: 'tenant', tenantId: 'tenant-1', activeWorkspaceId: 'tenant-1' });
   useChatStore.setState({ activeSessionId: 'thread-1', pendingApproval: null, sessions: [
     { id: 'thread-1', title: '新对话', messages: [], createdAt: 0, pending: true, conversationMode: 'agui' },
   ] });

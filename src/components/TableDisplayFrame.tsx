@@ -43,6 +43,8 @@ interface TableDisplayFrameProps {
   exportTables?: TableDisplayData[];
   toolbarExtra?: ReactNode;
   subtitle?: ReactNode;
+  showFullscreen?: boolean;
+  showDownload?: boolean;
 }
 
 type FullscreenTableRow = Record<string, string> & { __rowKey: string };
@@ -343,17 +345,20 @@ export function TableDisplayFrame({
   exportTables,
   toolbarExtra,
   subtitle,
+  showFullscreen = true,
+  showDownload = true,
 }: TableDisplayFrameProps) {
   const [fullscreen, setFullscreen] = useState(false);
   const [fullscreenTables, setFullscreenTables] = useState<FullscreenTableData[]>([]);
   const tableRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
   const exportName = filename || title || '表格数据';
+  const useStructuredFullscreen = Boolean(fullscreenPagination || exportTables?.length);
 
   useEffect(() => {
-    if (!fullscreen || !fullscreenPagination) return;
+    if (!fullscreen || !useStructuredFullscreen) return;
     setFullscreenTables(exportTables ? normalizeExplicitTables(exportTables, title) : parseFullscreenTables(tableRef.current, title));
-  }, [children, exportTables, fullscreen, fullscreenPagination, title]);
+  }, [children, exportTables, fullscreen, title, useStructuredFullscreen]);
 
   function handleDownload() {
     const data = exportTables
@@ -371,30 +376,34 @@ export function TableDisplayFrame({
       <div className="flex min-w-0 shrink-0 items-center gap-2">
         {toolbarExtra}
         <div className="flex shrink-0 items-center gap-1">
-        <Button
-          type="text"
-          autoInsertSpace={false}
-          onClick={() => setFullscreen(true)}
-          className="inline-flex h-8 min-w-8 w-8 items-center justify-center rounded-md p-0 text-slate-500 transition hover:bg-white hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 md:h-7 md:min-w-7 md:w-7"
-          title="全屏展示"
-          aria-label={`${title}全屏展示`}
-        >
-          <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-            <path d="M4 3a1 1 0 00-1 1v4a1 1 0 102 0V5h3a1 1 0 000-2H4zm8 0a1 1 0 100 2h3v3a1 1 0 102 0V4a1 1 0 00-1-1h-4zM4 11a1 1 0 011 1v3h3a1 1 0 110 2H4a1 1 0 01-1-1v-4a1 1 0 011-1zm12 0a1 1 0 00-1 1v3h-3a1 1 0 100 2h4a1 1 0 001-1v-4a1 1 0 00-1-1z" />
-          </svg>
-        </Button>
-        <Button
-          type="text"
-          autoInsertSpace={false}
-          onClick={handleDownload}
-          className="inline-flex h-8 min-w-8 w-8 items-center justify-center rounded-md p-0 text-slate-500 transition hover:bg-white hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 md:h-7 md:min-w-7 md:w-7"
-          title="下载表格"
-          aria-label={`${title}下载表格`}
-        >
-          <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-            <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
-          </svg>
-        </Button>
+        {showFullscreen && (
+          <Button
+            type="text"
+            autoInsertSpace={false}
+            onClick={() => setFullscreen(true)}
+            className="inline-flex h-8 min-w-8 w-8 items-center justify-center rounded-md p-0 text-slate-500 transition hover:bg-white hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 md:h-7 md:min-w-7 md:w-7"
+            title="全屏展示"
+            aria-label={`${title}全屏展示`}
+          >
+            <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path d="M4 3a1 1 0 00-1 1v4a1 1 0 102 0V5h3a1 1 0 000-2H4zm8 0a1 1 0 100 2h3v3a1 1 0 102 0V4a1 1 0 00-1-1h-4zM4 11a1 1 0 011 1v3h3a1 1 0 110 2H4a1 1 0 01-1-1v-4a1 1 0 011-1zm12 0a1 1 0 00-1 1v3h-3a1 1 0 100 2h4a1 1 0 001-1v-4a1 1 0 00-1-1z" />
+            </svg>
+          </Button>
+        )}
+        {showDownload && (
+          <Button
+            type="text"
+            autoInsertSpace={false}
+            onClick={handleDownload}
+            className="inline-flex h-8 min-w-8 w-8 items-center justify-center rounded-md p-0 text-slate-500 transition hover:bg-white hover:text-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 md:h-7 md:min-w-7 md:w-7"
+            title="下载表格"
+            aria-label={`${title}下载表格`}
+          >
+            <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+            </svg>
+          </Button>
+        )}
         </div>
       </div>
     </div>
@@ -428,16 +437,18 @@ export function TableDisplayFrame({
           <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
             <h2 className="min-w-0 truncate text-sm font-semibold text-slate-800">{title}</h2>
             <div className="flex shrink-0 items-center gap-2">
-              <Button
-                autoInsertSpace={false}
-                onClick={handleDownload}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-100"
-              >
-                <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                  <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
-                </svg>
-                下载
-              </Button>
+              {showDownload && (
+                <Button
+                  autoInsertSpace={false}
+                  onClick={handleDownload}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                >
+                  <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                    <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+                  </svg>
+                  下载
+                </Button>
+              )}
               <Button
                 type="text"
                 autoInsertSpace={false}
@@ -454,7 +465,7 @@ export function TableDisplayFrame({
           </div>
           <div className="min-h-0 flex-1 overflow-hidden p-2 md:p-4">
             <div className="table-fullscreen-content h-full min-w-0">
-              {!fullscreenPagination ? (
+              {!useStructuredFullscreen ? (
                 <div className={`h-full overflow-auto ${tableClassName}`}>
                   {children}
                 </div>

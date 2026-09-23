@@ -133,6 +133,29 @@ describe('TableDisplayFrame', () => {
     expect(styledValue.className).toContain('font-medium');
   });
 
+  it('uses explicit structured rows in fullscreen and can hide incomplete downloads', () => {
+    render(
+      <TableDisplayFrame
+        title="每日销售"
+        exportTables={[{
+          headers: ['日期'],
+          rows: [['2026-08-01'], ['2026-08-02']],
+        }]}
+        showDownload={false}
+      >
+        <table><tbody><tr><td>2026-08-01</td></tr></tbody></table>
+      </TableDisplayFrame>,
+    );
+
+    expect(screen.queryByTitle('下载表格')).toBeNull();
+    fireEvent.click(screen.getByTitle('全屏展示'));
+
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('2026-08-01')).toBeTruthy();
+    expect(within(dialog).getByText('2026-08-02')).toBeTruthy();
+    expect(within(dialog).queryByRole('button', { name: '下载' })).toBeNull();
+  });
+
   it('splits comparison cells into styled xlsx columns without changing the rendered table', async () => {
     render(
       <TableDisplayFrame

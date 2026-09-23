@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDownOutlined } from '@ant-design/icons';
+import { ArrowDownOutlined, ReloadOutlined } from '@ant-design/icons';
 import { Button, Input, notification } from 'antd';
 import type { AgentRunApprovalDecision } from '../api/agentRuns';
 import type { AgentRunCommandResult } from '../api/agentRuns';
@@ -104,6 +104,9 @@ export function ChatWindow() {
     }
     return index;
   }, [activeSessionId, tasks]);
+  const replayedAguiRunIds = useMemo(() => new Set(
+    messages.flatMap((message) => message.agui?.runId ? [message.agui.runId] : []),
+  ), [messages]);
   const previousQuestionByMessageId = useMemo(() => {
     const index = new Map<string, string>();
     let previousQuestion = '';
@@ -271,10 +274,10 @@ export function ChatWindow() {
 
     return (
       <div
-        className={`mobile-soft-focus flex items-end gap-2 border transition-colors focus-within:border-slate-300 focus-within:ring-2 focus-within:ring-slate-200/70 ${
+        className={`mobile-soft-focus flex items-end gap-2 border transition-all duration-200 focus-within:border-blue-300 focus-within:ring-4 focus-within:ring-blue-100/70 ${
           isCenter
-            ? 'min-h-[72px] rounded-[28px] border-slate-200 bg-white px-4 py-3 shadow-lg shadow-slate-200/70'
-            : 'rounded-2xl border-slate-200 bg-white px-3 py-2 shadow-sm'
+            ? 'min-h-[76px] rounded-[28px] border-slate-200 bg-white px-4 py-3 shadow-[0_18px_50px_-24px_rgba(15,23,42,0.35)]'
+            : 'rounded-2xl border-slate-200 bg-white px-3 py-2 shadow-[0_8px_30px_-22px_rgba(15,23,42,0.55)]'
         }`}
       >
         {!isPersonal && <Button
@@ -282,7 +285,7 @@ export function ChatWindow() {
           onClick={() => setShowUpload((v) => !v)}
           title="上传账单文件"
           aria-label="上传账单文件"
-          className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border-0 p-0 shadow-none transition-colors cursor-pointer ${
+          className={`flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl border-0 p-0 shadow-none transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-blue-300 ${
             showUpload ? 'text-blue-600 bg-blue-100' : 'text-slate-400 hover:text-blue-600 hover:bg-blue-50'
           } ${isCenter ? '' : 'mb-0.5'}`}
         >
@@ -309,7 +312,7 @@ export function ChatWindow() {
           onClick={() => handleSend(input)}
           disabled={sending || Boolean(unresolvedAgui) || (!input.trim() && pendingFiles.length === 0)}
           aria-label="发送消息"
-          className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl border-0 bg-blue-500 p-0 text-white shadow-none hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer ${
+          className={`flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl border-0 bg-blue-600 p-0 text-white shadow-md shadow-blue-200 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none transition-all duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 ${
             isCenter ? '' : 'mb-0.5 rounded-lg'
           }`}
         >
@@ -342,15 +345,15 @@ export function ChatWindow() {
   }
 
   return (
-    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-slate-50">
+    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-[#f7f9fc]">
       {/* 顶部标题栏 */}
-      <div className="hidden px-5 py-3 border-b border-slate-200 md:flex items-center justify-between bg-white shadow-sm">
-        <h2 className="text-sm font-medium text-slate-700">{session?.title ?? '对话'}</h2>
+      <div className="hidden min-h-14 items-center justify-between border-b border-slate-200/80 bg-white px-6 py-3 md:flex">
+        <h2 className="truncate text-sm font-semibold text-slate-800">{session?.title ?? '对话'}</h2>
         {role === 'admin' && messages.length > 0 && !session?.pending && (
           <Button
             onClick={() => setShowExtract(true)}
             title="把本次对话中的稳定结论沉淀为知识"
-            className="h-auto px-3 py-1 rounded-lg text-xs text-blue-600 hover:bg-blue-50 border border-blue-200 cursor-pointer transition-colors flex items-center gap-1"
+            className="flex h-9 items-center gap-1.5 rounded-lg border border-blue-200 bg-white px-3 text-xs font-medium text-blue-600 shadow-none transition-colors hover:bg-blue-50 focus-visible:ring-2 focus-visible:ring-blue-200 cursor-pointer"
           >
             <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
               <path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z" />
@@ -387,7 +390,7 @@ export function ChatWindow() {
         role="log"
         aria-label="对话消息"
         onScroll={handleMessageScroll}
-        className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-3 py-3 md:px-5 md:py-4"
+        className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-3 py-4 md:px-6 md:py-6"
       >
         {isEmptySession && (
           <div className="flex min-h-full items-center justify-center px-1 pb-20 md:px-4 md:pb-24">
@@ -417,10 +420,17 @@ export function ChatWindow() {
             </div>
           </div>
         )}
-        <div ref={messageContentRef}>
+        <div ref={messageContentRef} className="mx-auto w-full max-w-[860px]">
         {messages.map((msg) => {
           if (msg.role === 'tool_call' && hiddenToolCallIds.has(msg.id)) return null;
-          const task = msg.taskId ? taskById.get(msg.taskId) : undefined;
+          const task = msg.taskId && !replayedAguiRunIds.has(msg.taskId) ? taskById.get(msg.taskId) : undefined;
+          const retryPrompt = previousQuestionByMessageId.get(msg.id)?.trim();
+          const isActiveAgui = msg.agui?.status === 'connecting' || msg.agui?.status === 'running';
+          const showAguiStatus = Boolean(
+            msg.agui
+            && msg.agui.status !== 'completed'
+            && !isActiveAgui,
+          );
           return (
           <div key={msg.id}>
             {msg.role === 'tool_call' && msg.toolCall ? (
@@ -431,6 +441,20 @@ export function ChatWindow() {
                 sessionId={activeSessionId!}
                 canDelete={!unresolvedAgui}
                 animateText={isAgui && msg.id === lastMessage?.id}
+                loadingAction={isActiveAgui && msg.agui && canReconnectAguiRun(msg.agui.runId) ? (
+                  <Button
+                    autoInsertSpace={false}
+                    htmlType="button"
+                    type="text"
+                    size="small"
+                    aria-label="停止本轮"
+                    loading={cancellingAguiRunId === msg.agui.runId}
+                    className="h-7 px-2 text-xs font-normal text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                    onClick={() => { void handleAguiCancel(msg.agui!.runId); }}
+                  >
+                    停止
+                  </Button>
+                ) : undefined}
                 hideStructuredContent={Boolean(msg.agentResponse)}
                 structuredContent={msg.role === 'assistant' && msg.agentResponse ? (
                   <ResponsePartsRenderer
@@ -460,10 +484,53 @@ export function ChatWindow() {
                 ) : undefined}
               />
             )}
-            {msg.agui && (
-              <div className="mb-4 ml-9 rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-600">
-                <p role="status" aria-live="polite">{AGUI_STATUS_LABELS[msg.agui.status]}</p>
-                {msg.agui.detail && <p className="mt-1 break-words text-xs text-slate-500">{msg.agui.detail}</p>}
+            {msg.agui && showAguiStatus && (
+              <div className={`mb-6 ml-10 min-h-9 max-w-[calc(100%_-_2.5rem)] flex-col justify-center rounded-xl text-xs ${
+                msg.agui.status === 'failed' || msg.agui.status === 'disconnected'
+                  ? 'flex w-[calc(100%_-_2.5rem)] border border-red-200 bg-red-50/70 px-4 py-3 text-red-700'
+                  : msg.agui.status === 'waiting_for_approval' || msg.agui.status === 'interrupted'
+                    ? 'inline-flex border border-amber-200 bg-amber-50/80 px-3 py-2 text-amber-700'
+                    : 'inline-flex px-3 py-2 text-slate-500'
+              }`}>
+                <div className={msg.agui.status === 'failed' ? 'flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between' : undefined}>
+                  <div className="min-w-0">
+                    <p role="status" aria-live="polite" className="flex items-center gap-2 font-medium text-slate-700">
+                      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                        msg.agui.status === 'failed' || msg.agui.status === 'disconnected' ? 'bg-red-500'
+                          : msg.agui.status === 'waiting_for_approval' || msg.agui.status === 'interrupted' ? 'bg-amber-500'
+                            : msg.agui.status === 'connecting' || msg.agui.status === 'running' ? 'bg-blue-500 motion-safe:animate-pulse'
+                              : 'bg-emerald-500'
+                      }`} />
+                      {msg.agui.status === 'failed' ? '回答生成失败' : AGUI_STATUS_LABELS[msg.agui.status]}
+                    </p>
+                    {msg.agui.status === 'failed' && (
+                      <p className="mt-1 text-xs leading-5 text-slate-600">分析服务未能完成本次请求。你可以重新生成，或稍后再试。</p>
+                    )}
+                  </div>
+                  {msg.agui.status === 'failed' && retryPrompt && (
+                    <Button
+                      autoInsertSpace={false}
+                      htmlType="button"
+                      size="small"
+                      icon={<ReloadOutlined />}
+                      aria-label="重新生成"
+                      disabled={sending || Boolean(unresolvedAgui)}
+                      className="shrink-0 border-red-200 bg-white text-red-700 shadow-none hover:border-red-300 hover:text-red-800"
+                      onClick={() => { void handleSend(retryPrompt); }}
+                    >
+                      重新生成
+                    </Button>
+                  )}
+                </div>
+                {msg.agui.detail && msg.agui.status !== 'failed' && (
+                  <p className="mt-1 break-words text-xs text-slate-500">{msg.agui.detail}</p>
+                )}
+                {msg.agui.detail && msg.agui.status === 'failed' && (
+                  <details className="mt-3 border-t border-red-100 pt-2 text-xs text-slate-500">
+                    <summary className="w-fit cursor-pointer select-none hover:text-slate-700">查看错误详情</summary>
+                    <code className="mt-1 block break-all rounded bg-white/70 px-2 py-1 text-[11px]">{msg.agui.detail}</code>
+                  </details>
+                )}
                 {msg.agui.status === 'waiting_for_approval' && msg.agui.approval && canReconnectAguiRun(msg.agui.runId) && (
                   <div className="mt-2 flex flex-wrap gap-2">
                     <Button htmlType="button" type="primary" onClick={() => setAguiApprovalDecision({
@@ -491,7 +558,7 @@ export function ChatWindow() {
             {msg.role === 'assistant' && !msg.streaming && !msg.agentResponse && (
               <LegacyIntentClarificationButtons content={msg.content} onChoose={(value) => sendMessage(value)} />
             )}
-            {task ? (
+            {task && task.task_type !== 'general_graph' ? (
               <TaskCard
                 task={task}
                 onResearchResume={(researchTask, result) => resumeResearchRun(researchTask, result as AgentRunCommandResult)}
@@ -526,7 +593,7 @@ export function ChatWindow() {
           icon={<ArrowDownOutlined />}
           aria-label="下滑到最底部"
           title="下滑到最底部"
-          className="absolute bottom-[76px] right-4 z-20 border-slate-200 bg-white text-slate-600 shadow-lg motion-safe:animate-bounce md:bottom-[88px] md:right-6"
+          className="chat-jump-latest absolute bottom-[84px] right-4 z-20 h-11 w-11 border-blue-100 bg-blue-600 text-white shadow-[0_10px_28px_-8px_rgba(37,99,235,0.65)] transition-colors duration-200 hover:bg-blue-700 focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 md:bottom-[96px] md:right-6"
           onClick={() => {
             followLatestRef.current = true;
             setShowLatestButton(false);
@@ -596,8 +663,10 @@ export function ChatWindow() {
 
       {/* 输入区 */}
       {!isEmptySession && (
-        <div className="border-t border-slate-200 bg-white px-3 py-2 md:px-4 md:py-3">
-          {renderComposer('dock')}
+        <div className="border-t border-slate-200/80 bg-white/95 px-3 py-2 backdrop-blur md:px-6 md:py-3">
+          <div className="mx-auto w-full max-w-[860px]">
+            {renderComposer('dock')}
+          </div>
         </div>
       )}
 
@@ -674,7 +743,7 @@ export function LegacyIntentClarificationButtons({ content, onChoose }: { conten
   const options = clarificationOptions(content);
   if (options.length === 0) return null;
   return (
-    <div className="ml-0 mt-2 flex flex-wrap gap-2 md:ml-9">
+    <div className="ml-0 mt-2 flex flex-col gap-2 md:ml-10 md:flex-row md:flex-wrap">
       {options.map((option) => (
         <Button
           key={option.value}
@@ -682,7 +751,7 @@ export function LegacyIntentClarificationButtons({ content, onChoose }: { conten
           onClick={() => onChoose(option.value)}
           title={option.examples.length > 0 ? `例如：${option.examples.join(' / ')}` : option.detail}
           aria-label={`选择${option.title}`}
-          className="group inline-flex h-auto max-w-full items-center gap-1.5 rounded-full border border-blue-200 bg-white px-3 py-1.5 text-xs font-medium text-blue-700 shadow-sm transition-colors hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-100"
+          className="group inline-flex min-h-11 max-w-full items-center gap-1.5 whitespace-normal rounded-xl border border-blue-200 bg-white px-3.5 py-2 text-left text-sm font-medium leading-5 text-blue-700 shadow-sm transition-all duration-200 hover:border-blue-300 hover:bg-blue-50 hover:shadow-md focus-visible:ring-2 focus-visible:ring-blue-200 md:min-h-9 md:text-xs"
         >
           <span className="truncate">{option.title}</span>
         </Button>

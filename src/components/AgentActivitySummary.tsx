@@ -55,21 +55,23 @@ export function AgentActivitySummary({ activity }: Props) {
   }, [activity.status]);
 
   return (
-    <section className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700">
+    <section className={`w-full rounded-xl px-2 text-sm text-slate-600 transition-colors ${
+      activity.status === 'running' ? 'bg-blue-50/70' : 'bg-transparent hover:bg-slate-100/70'
+    }`}>
       <button
         type="button"
-        className="flex min-h-11 w-full items-center gap-2 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+        className="flex min-h-10 w-full items-center gap-2 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
         aria-expanded={expanded}
         aria-controls={detailsId}
         onClick={() => setExpanded((value) => !value)}
       >
         <StatusIcon status={activity.status} />
-        <span className="min-w-0 flex-1 truncate font-medium">{summary}</span>
+        <span className="min-w-0 flex-1 truncate text-xs font-medium">{summary}</span>
         <DownOutlined aria-hidden="true" className={`text-slate-400 transition-transform motion-reduce:transition-none ${expanded ? 'rotate-180' : ''}`} />
       </button>
       <span className="sr-only" role="status" aria-live="polite">{announcement}</span>
       {expanded && (
-        <div id={detailsId} className="border-t border-slate-200 py-2.5">
+        <div id={detailsId} className="border-t border-slate-200/80 py-2.5">
           <ol className="space-y-2">
             {activity.steps.map((step) => (
               <li key={step.step_id} className="flex items-start gap-2 text-xs text-slate-600">
