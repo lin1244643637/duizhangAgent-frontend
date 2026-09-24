@@ -139,6 +139,25 @@ describe('ResponsePartsRenderer', () => {
     }
   });
 
+  it('uses the same business enum labels as Markdown tables', () => {
+    render(<ResponsePartsRenderer response={response({
+      parts: [{
+        kind: 'table',
+        title: '业务状态',
+        columns: [
+          { key: 'attendance', label: '考勤状态' },
+          { key: 'approval', label: '审批状态' },
+          { key: 'task', label: '任务状态' },
+        ],
+        preview_rows: [{ attendance: 'LATE', approval: 'agree', task: 'COMPLETED' }],
+      }],
+    })} />);
+
+    for (const value of ['迟到', '同意', '已完成']) {
+      expect(screen.getByText(value)).toBeTruthy();
+    }
+  });
+
   it.each([
     ['partial', '结果不完整', false],
     ['empty', '暂无可用数据', false],
@@ -163,7 +182,7 @@ describe('ResponsePartsRenderer', () => {
     expect(screen.getByText('可用事实')).toBeTruthy();
     expect(screen.getByRole('button', { name: '继续分析' })).toHaveProperty('disabled', blocked);
     expect(screen.getByRole('button', { name: '选择门店' })).toHaveProperty('disabled', blocked);
-    expect(Boolean(screen.queryByRole('button', { name: '展开明细' }))).toBe(!blocked);
+    expect(Boolean(screen.queryByRole('button', { name: '展开全部' }))).toBe(!blocked);
   });
 
   it('renders daily table rows and the server-provided row count', () => {
@@ -240,11 +259,11 @@ describe('ResponsePartsRenderer', () => {
           label: '展开明细',
           params: { table_id: 'daily-sales' },
         }],
-      })} />,
+      })} animate streaming />,
     );
 
     expect(screen.queryByText('2026-08-04')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '展开明细' }));
+    fireEvent.click(screen.getByRole('button', { name: '展开全部' }));
     expect(screen.getByText('2026-08-04')).toBeTruthy();
   });
 
@@ -268,7 +287,7 @@ describe('ResponsePartsRenderer', () => {
     );
 
     expect(screen.queryByText('凤十二')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '展开明细' }));
+    fireEvent.click(screen.getByRole('button', { name: '展开全部' }));
     expect(screen.getByText('凤十二')).toBeTruthy();
   });
 
@@ -292,9 +311,9 @@ describe('ResponsePartsRenderer', () => {
     );
 
     expect(screen.queryByText('凤十二')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '展开明细' }));
+    fireEvent.click(screen.getByRole('button', { name: '展开全部' }));
     expect(screen.getByText('凤十二')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: '收回明细' }));
+    fireEvent.click(screen.getByRole('button', { name: '收起' }));
     expect(screen.queryByText('凤十二')).toBeNull();
   });
 
@@ -326,9 +345,9 @@ describe('ResponsePartsRenderer', () => {
 
     expect(screen.getByText('门店10')).toBeTruthy();
     expect(screen.queryByText('门店11')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '展开明细' }));
+    fireEvent.click(screen.getByRole('button', { name: '展开全部' }));
     expect(screen.getByText('门店11')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: '收回明细' }));
+    fireEvent.click(screen.getByRole('button', { name: '收起' }));
     expect(screen.getByText('门店10')).toBeTruthy();
     expect(screen.queryByText('门店11')).toBeNull();
   });

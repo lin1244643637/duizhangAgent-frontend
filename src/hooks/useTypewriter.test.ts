@@ -1,6 +1,6 @@
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useTypewriter } from './useTypewriter';
+import { useTableTypewriter, useTypewriter } from './useTypewriter';
 
 describe('display-only typewriter', () => {
   let time: number;
@@ -16,6 +16,10 @@ describe('display-only typewriter', () => {
   const start = (text = '', streaming = true, enabled = true) => renderHook(
     (props) => useTypewriter(props.text, props.enabled, props.streaming),
     { initialProps: { text, streaming, enabled } },
+  );
+  const startTable = (total = 0, streaming = true, enabled = true) => renderHook(
+    (props) => useTableTypewriter(props.total, props.enabled, props.streaming),
+    { initialProps: { total, streaming, enabled } },
   );
 
   beforeEach(() => {
@@ -34,7 +38,7 @@ describe('display-only typewriter', () => {
   });
   afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
-  it('receives full text immediately but displays small batches and catches up', () => {
+  it('receives full text immediately but displays only four graphemes per refresh', () => {
     const source = '真实流式接收与前端轻量打字机。'.repeat(20);
     const { result, rerender } = start();
     rerender({ text: source, streaming: true, enabled: true });
@@ -46,7 +50,7 @@ describe('display-only typewriter', () => {
     const prefix = result.current.text;
     rerender({ text: source + '新片段', streaming: true, enabled: true });
     expect(result.current.text).toBe(prefix);
-    for (let i = 0; i < 60; i++) advance();
+    for (let i = 0; i < 100; i++) advance();
     expect(result.current.text).toBe(source + '新片段');
     expect(frames.size).toBe(0);
   });
@@ -65,35 +69,40 @@ describe('display-only typewriter', () => {
     const { result, rerender } = start();
     rerender({ text: '销售数据'.repeat(8), streaming: true, enabled: true });
     advance(32);
-    expect(result.current.text.length).toBeGreaterThan(0);
-    expect(result.current.text.length).toBeLessThanOrEqual(18);
+    expect(result.current.text).toBe('销售数据');
   });
 
-  it('keeps pace with 32 characters every 80 ms without a large completion jump', () => {
+  it('keeps the base pace when the backlog does not require acceleration', () => {
     const { result, rerender } = start();
-    let source = '';
-    for (let index = 0; index < 20; index++) {
-      source += '销售数据'.repeat(8);
-      rerender({ text: source, streaming: true, enabled: true });
-      advance(32);
-      advance(48);
-      expect(source.length - result.current.text.length).toBeLessThanOrEqual(32);
-    }
-    const shownBeforeFinish = result.current.text.length;
+    const source = '销售数据'.repeat(20);
+    rerender({ text: source, streaming: true, enabled: true });
+    advance(80);
+    expect(result.current.text).toBe('销售数据');
     rerender({ text: source, streaming: false, enabled: true });
     advance(600);
-    expect(result.current.text).toBe(source);
-    expect(source.length - shownBeforeFinish).toBeLessThanOrEqual(32);
+    expect(result.current.text).toBe('销售数据销售数据');
+    expect(result.current.isTyping).toBe(true);
   });
 
-  it('finishes playback within 600 ms of run completion without changing streaming', () => {
+  it('accelerates a large streaming backlog to catch up in about five seconds', () => {
     const { result, rerender } = start();
-    const text = '很长的回答'.repeat(1000);
+    const text = '经营数据'.repeat(1000);
+    rerender({ text, streaming: true, enabled: true });
+    advance();
+    expect(result.current.text.length).toBeGreaterThan(4);
+    for (let i = 0; i < 156; i++) advance();
+    expect(result.current.text).toBe(text);
+    expect(result.current.isTyping).toBe(false);
+  });
+
+  it('finishes any remaining playback within ten seconds after run completion', () => {
+    const { result, rerender } = start();
+    const text = '很长回答'.repeat(1000);
     rerender({ text, streaming: true, enabled: true });
     advance();
     rerender({ text, streaming: false, enabled: true });
     expect(result.current.isTyping).toBe(true);
-    advance(600);
+    advance(10_000);
     expect(result.current.text).toBe(text);
     expect(result.current.isTyping).toBe(false);
     expect(frames.size).toBe(0);
@@ -111,6 +120,7 @@ describe('display-only typewriter', () => {
     rerender({ text: '断线前已经收到的内容，重连新增', streaming: true, enabled: true });
     expect(result.current.text).toBe('断线前已经收到的内容');
     advance(1000);
+    advance();
     expect(result.current.text).toBe('断线前已经收到的内容，重连新增');
   });
 
@@ -175,6 +185,36 @@ describe('display-only typewriter', () => {
     expect(result.current.text).toHaveLength(20_001);
     rerender({ text: '服务器替换了内容', streaming: true, enabled: true });
     expect(result.current.text).toBe('服务器替换了内容');
+    expect(frames.size).toBe(0);
+  });
+
+  it('reveals live structured table rows one by one', () => {
+    const { result, rerender } = startTable();
+    rerender({ total: 3, streaming: true, enabled: true });
+    expect(result.current).toEqual({ count: 0, isTyping: true });
+    advance(96);
+    expect(result.current).toEqual({ count: 1, isTyping: true });
+    advance(96);
+    expect(result.current.count).toBe(2);
+    advance(96);
+    expect(result.current).toEqual({ count: 3, isTyping: false });
+  });
+
+  it('does not replay structured table rows from history', () => {
+    const history = startTable(10, false, true);
+    expect(history.result.current).toEqual({ count: 10, isTyping: false });
+    expect(frames.size).toBe(0);
+  });
+
+  it('finishes structured table playback after the stream ends', () => {
+    const { result, rerender } = startTable();
+    rerender({ total: 100, streaming: true, enabled: true });
+    advance(96);
+    expect(result.current.count).toBeGreaterThan(0);
+    expect(result.current.count).toBeLessThan(100);
+    rerender({ total: 100, streaming: false, enabled: true });
+    advance(10_000);
+    expect(result.current).toEqual({ count: 100, isTyping: false });
     expect(frames.size).toBe(0);
   });
 });

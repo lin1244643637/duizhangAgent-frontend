@@ -223,8 +223,16 @@ html, body, #root {
   to { opacity: 1; transform: translateY(0); }
 }
 .chat-jump-latest { animation: chat-jump-in 220ms ease-out; }
+.structured-table-enter { animation: chat-jump-in 220ms ease-out; }
+.structured-table-row-typing { animation: structured-table-row-in 180ms ease-out; }
+@keyframes structured-table-row-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 @media (prefers-reduced-motion: reduce) {
-  .chat-jump-latest { animation: none; }
+  .chat-jump-latest,
+  .structured-table-enter,
+  .structured-table-row-typing { animation: none; }
 }
 
 .table-fullscreen-content table {

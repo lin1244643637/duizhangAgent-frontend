@@ -104,6 +104,35 @@ describe('chatStore structured agent responses', () => {
     });
   });
 
+  it('restores a completed bounded ReAct reply as an AG-UI message', async () => {
+    useChatStore.setState({
+      sessions: [{ id: 'session-1', title: '经营分析历史', messages: [], createdAt: 0, loaded: false }],
+      activeSessionId: 'session-1',
+    });
+    mocks.apiFetch.mockResolvedValueOnce({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        session_id: 'session-1',
+        title: '经营分析历史',
+        messages: [{
+          id: 'assistant-completed', role: 'assistant', content: '昨日营业数据', task_id: 'run-2',
+          created_at: '2026-09-24T10:00:00+08:00',
+          metadata: {
+            delivery_status: 'completed', execution_path: 'bounded_react', run_id: 'run-2',
+          },
+        }],
+      }),
+    });
+
+    await useChatStore.getState().loadSessionHistory('session-1');
+
+    expect(useChatStore.getState().sessions[0]?.messages[0]).toMatchObject({
+      id: 'assistant-completed',
+      taskId: 'run-2',
+      agui: { runId: 'run-2', status: 'completed' },
+    });
+  });
+
   it.each(['completed', 'partial', 'empty', 'unavailable', 'failed'] as const)(
     'parses a bounded %s terminal activity with a server wall-clock total',
     (status) => {

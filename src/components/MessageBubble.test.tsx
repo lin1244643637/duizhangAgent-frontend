@@ -282,27 +282,35 @@ describe('MessageBubble table rendering', () => {
 
     it('animates only display text, separates run completion, and copies the full source', async () => {
       const { container, rerender } = render(<MessageBubble message={running} sessionId="s" animateText />);
-      const received = { ...running, content: '**经营分析**\n\n普通文字。'.repeat(200) };
+      const received = { ...running, content: '**经营分析**\n\n普通文字。'.repeat(4) };
       rerender(<MessageBubble message={received} sessionId="s" animateText />);
       expect(container.querySelector('.markdown-body')?.textContent).toBe('');
       tick();
       expect(container.querySelector('.markdown-body')?.textContent?.length).toBeGreaterThan(0);
-      expect(received.content).toHaveLength(3000);
       const completed: Message = { ...received, streaming: false, agui: { runId: 'run-1', status: 'completed' } };
       rerender(<MessageBubble message={completed} sessionId="s" animateText />);
       expect(screen.getByText('回答已生成，正在显示')).toBeTruthy();
       expect(screen.queryByTitle('复制内容')).toBeNull();
       expect(container.querySelector('.markdown-body')?.closest('[aria-live="off"]')).not.toBeNull();
       expect(screen.queryByRole('button', { name: '直接显示全部' })).toBeNull();
-      tick(600);
+      for (let i = 0; i < 20; i++) tick();
       expect(screen.queryByText('回复已完整显示')).toBeNull();
+      expect(container.querySelectorAll('.markdown-body strong')).toHaveLength(4);
+      fireEvent.click(screen.getByTitle('复制内容'));
+      await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith(received.content));
+      expect(frames.size).toBe(0);
+    });
+
+    it('keeps long completed answers collapsible', () => {
+      const content = '**经营分析**\n\n普通文字。'.repeat(200);
+      const completed: Message = {
+        ...running, content, streaming: false, agui: { runId: 'run-1', status: 'completed' },
+      };
+      const { container } = render(<MessageBubble message={completed} sessionId="s" />);
       expect(container.querySelector('.max-h-72')).not.toBeNull();
       fireEvent.click(screen.getByRole('button', { name: '展开全文' }));
       expect(container.querySelector('.max-h-72')).toBeNull();
       expect(container.querySelectorAll('.markdown-body strong')).toHaveLength(200);
-      fireEvent.click(screen.getByTitle('复制内容'));
-      await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith(received.content));
-      expect(frames.size).toBe(0);
     });
 
     it.each(['failed', 'cancelled', 'interrupted', 'disconnected', 'waiting_for_approval'] as const)(
@@ -329,7 +337,7 @@ describe('MessageBubble table rendering', () => {
       expect(screen.queryByText('9月2日')).toBeNull();
       rerender(<MessageBubble message={{ ...running, content: fullText, streaming: false, agui: { runId: 'run-1', status: 'completed' } }} sessionId="s" animateText />);
       expect(screen.queryByText('9月2日')).toBeNull();
-      tick(600);
+      for (let i = 0; i < 30; i++) tick();
       expect(screen.getByText('9月2日')).toBeTruthy();
       expect(screen.getByTitle('下载表格')).toBeTruthy();
       expect(frames.size).toBe(0);

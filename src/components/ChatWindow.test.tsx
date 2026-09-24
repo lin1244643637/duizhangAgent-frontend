@@ -355,16 +355,19 @@ describe('ChatWindow streaming performance', () => {
     expect(screen.getByTestId('query-question').textContent).toBe('最近营收如何？');
   });
 
-  it('hides general conversation task cards from the chat transcript', () => {
-    useTaskStore.setState({
-      tasks: [{ task_id: 'task-1', task_type: 'general_graph', session_id: 'session-1', status: 'completed' } as never],
-    });
+  it.each(['general_graph', 'analytics_react', 'deterministic_graph'])(
+    'hides %s conversation task cards from the chat transcript',
+    (taskType) => {
+      useTaskStore.setState({
+        tasks: [{ task_id: 'task-1', task_type: taskType, session_id: 'session-1', status: 'completed' } as never],
+      });
 
-    render(<ChatWindow />);
+      render(<ChatWindow />);
 
-    expect(screen.queryByTestId('task-card')).toBeNull();
-    expect(screen.getByTestId('message-assistant-1')).toBeTruthy();
-  });
+      expect(screen.queryByTestId('task-card')).toBeNull();
+      expect(screen.getByTestId('message-assistant-1')).toBeTruthy();
+    },
+  );
 
   it('keeps auto-scroll inside the message list for stream batches and new messages', () => {
     const scrollIntoView = vi.fn();

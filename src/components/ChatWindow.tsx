@@ -459,6 +459,8 @@ export function ChatWindow() {
                 structuredContent={msg.role === 'assistant' && msg.agentResponse ? (
                   <ResponsePartsRenderer
                     response={msg.agentResponse}
+                    animate={isAgui && msg.id === lastMessage?.id}
+                    streaming={Boolean(msg.streaming)}
                     onPrompt={async (message) => {
                       const sent = await sendMessage(message);
                       if (sent === false) throw new Error('follow-up prompt send failed');
@@ -558,7 +560,7 @@ export function ChatWindow() {
             {msg.role === 'assistant' && !msg.streaming && !msg.agentResponse && (
               <LegacyIntentClarificationButtons content={msg.content} onChoose={(value) => sendMessage(value)} />
             )}
-            {task && task.task_type !== 'general_graph' ? (
+            {task && !['general_graph', 'analytics_react', 'deterministic_graph'].includes(task.task_type) ? (
               <TaskCard
                 task={task}
                 onResearchResume={(researchTask, result) => resumeResearchRun(researchTask, result as AgentRunCommandResult)}

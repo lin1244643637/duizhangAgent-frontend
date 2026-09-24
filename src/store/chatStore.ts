@@ -223,13 +223,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
         .map((m) => {
           const connectorQuery = m.metadata?.connector_query;
           const runId = typeof m.metadata?.run_id === 'string' ? m.metadata.run_id : m.task_id;
+          const deliveryStatus = m.metadata?.delivery_status;
           const agui: AguiMessageState | undefined = m.role === 'assistant'
-            && m.metadata?.execution_path === 'general_graph'
-            && m.metadata.delivery_status === 'failed'
+            && (m.metadata?.execution_path === 'general_graph' || m.metadata?.execution_path === 'bounded_react')
+            && (deliveryStatus === 'completed' || deliveryStatus === 'failed')
             && typeof runId === 'string'
             ? {
                 runId,
-                status: 'failed',
+                status: deliveryStatus,
                 ...(typeof m.metadata.failure_detail === 'string' && m.metadata.failure_detail.trim()
                   ? { detail: m.metadata.failure_detail.trim() }
                   : {}),

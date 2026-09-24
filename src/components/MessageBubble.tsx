@@ -11,6 +11,7 @@ import { FloatingNotice, type FloatingNoticeState } from './FloatingNotice';
 import { formatBeijingTime } from '../utils/time';
 import { AgentActivitySummary } from './AgentActivitySummary';
 import { useTypewriter } from '../hooks/useTypewriter';
+import { formatDisplayValue } from '../utils/displayValue';
 
 interface Props {
   message: Message;
@@ -37,34 +38,6 @@ const MARKDOWN_ATTRIBUTES_BY_TAG: Record<string, ReadonlySet<string>> = {
   th: new Set(['align', 'colspan', 'rowspan', 'scope']),
 };
 const MARKDOWN_LINK_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
-
-const DISPLAY_VALUE_LABELS: Record<string, string> = {
-  NEW: '新建',
-  RUNNING: '进行中',
-  COMPLETED: '已完成',
-  TERMINATED: '已终止',
-  CANCELED: '已取消',
-  CANCELLED: '已取消',
-  PENDING: '待处理',
-  SUCCESS: '成功',
-  FAILED: '失败',
-  FAILURE: '失败',
-  NORMAL: '正常',
-  MISSING_CHECK: '缺卡',
-  OUTSIDE: '外勤',
-  LATE: '迟到',
-  EARLY: '早退',
-  agree: '同意',
-  refuse: '拒绝',
-  redirect: '转交',
-  terminate: '终止',
-  cancel: '取消',
-};
-
-function formatDisplayValue(value: string): string {
-  const text = value.trim();
-  return DISPLAY_VALUE_LABELS[text] ?? DISPLAY_VALUE_LABELS[text.toUpperCase()] ?? value;
-}
 
 function normalizeMarkdownTables(text: string): string {
   return text.split('\n').map((line) => {
@@ -571,14 +544,14 @@ export function MessageBubble({ message, sessionId, hideStructuredContent = fals
         )}
 
         {messageTime && (
-          <div className={`mt-1 px-1 text-[11px] leading-none text-slate-400 transition-opacity md:opacity-0 md:group-hover/message:opacity-100 md:group-focus-within/message:opacity-100 ${isUser ? 'text-right' : 'text-left'}`}>
+          <div className={`mt-1 px-1 text-[11px] leading-none text-slate-400 transition-opacity md:group-hover/message:opacity-100 md:group-focus-within/message:opacity-100 ${isUser ? 'text-right' : 'text-left'}`}>
             {messageTime}
           </div>
         )}
 
         {/* 接收和动画展示结束后显示操作按钮；复制始终使用完整原文。 */}
         {!message.streaming && !playback.isTyping && (
-          <div className={`mt-1 flex max-w-full flex-nowrap items-center gap-1.5 transition-opacity md:opacity-0 md:group-hover/message:opacity-100 md:group-focus-within/message:opacity-100 ${isUser ? 'self-end' : 'self-start'}`}>
+          <div className={`mt-1 flex max-w-full flex-nowrap items-center gap-1.5 transition-opacity md:group-hover/message:opacity-100 md:group-focus-within/message:opacity-100 ${isUser ? 'self-end' : 'self-start'}`}>
             {knowledgeDraft && !isUser && (
               <button
                 type="button"

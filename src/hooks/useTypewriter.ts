@@ -3,6 +3,11 @@ import { useEffect, useRef, useState } from 'react';
 
 const segmenter = typeof Intl.Segmenter === 'function'
   ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null;
+const FRAME_MS = 32;
+const BASE_GRAPHEMES_PER_FRAME = 4;
+const STREAM_CATCH_UP_MS = 5_000;
+const COMPLETION_CATCH_UP_MS = 10_000;
+const TABLE_FRAME_MS = 96;
 
 /** Display only: never delays source text, protocol events, or run completion. */
 export function useTypewriter(text: string, enabled: boolean, streaming: boolean) {
@@ -47,14 +52,14 @@ export function useTypewriter(text: string, enabled: boolean, streaming: boolean
     if (displayedRef.current === text || !segmenter) return;
     const boundaries = Array.from(segmenter.segment(text), ({ index, segment }) => index + segment.length);
     let position = boundaries.findIndex((end) => end > displayedRef.current.length);
-    const finishBy = streaming ? Infinity : performance.now() + 600;
+    const catchUpBy = performance.now() + (streaming ? STREAM_CATCH_UP_MS : COMPLETION_CATCH_UP_MS);
     let frame: number;
     const tick = (now: number) => {
       const elapsed = now - lastPaint.current;
-      if (elapsed >= 32 || now >= finishBy) {
+      if (elapsed >= FRAME_MS || now >= catchUpBy) {
         const remaining = boundaries.length - position;
-        const count = now >= finishBy ? remaining
-          : Math.max(1, Math.floor(Math.min(elapsed, 64) / 1000 * Math.max(550, remaining / 0.4)));
+        const framesLeft = Math.max(1, Math.ceil((catchUpBy - now) / FRAME_MS));
+        const count = Math.max(BASE_GRAPHEMES_PER_FRAME, Math.ceil(remaining / framesLeft));
         position = Math.min(boundaries.length, position + count);
         publish(text.slice(0, boundaries[position - 1]));
         lastPaint.current = now;
@@ -69,4 +74,61 @@ export function useTypewriter(text: string, enabled: boolean, streaming: boolean
     text: animate && compatible ? displayed : text,
     isTyping,
   };
+}
+
+/** Reveals structured table rows progressively without delaying the received payload. */
+export function useTableTypewriter(total: number, enabled: boolean, streaming: boolean) {
+  const [displayed, setDisplayed] = useState(enabled && streaming ? 0 : total);
+  const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
+  const [hidden, setHidden] = useState(() => document.visibilityState === 'hidden');
+  const hasStreamed = useRef(streaming);
+  const displayedRef = useRef(displayed);
+  const lastPaint = useRef(performance.now());
+  const animate = enabled && !reducedMotion && !hidden && (streaming || hasStreamed.current);
+  const isTyping = animate && displayed < total;
+
+  useEffect(() => {
+    if (!enabled) return;
+    const media = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+    const onMotion = () => setReducedMotion(media?.matches ?? false);
+    const onVisibility = () => setHidden(document.visibilityState === 'hidden');
+    onMotion();
+    onVisibility();
+    media?.addEventListener?.('change', onMotion);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      media?.removeEventListener?.('change', onMotion);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [enabled]);
+
+  useEffect(() => {
+    if (enabled && streaming) hasStreamed.current = true;
+    const publish = (value: number) => {
+      displayedRef.current = value;
+      setDisplayed(value);
+    };
+    if (!animate || displayedRef.current > total) {
+      publish(total);
+      lastPaint.current = performance.now();
+      return;
+    }
+    if (displayedRef.current === total) return;
+    const catchUpBy = performance.now() + (streaming ? STREAM_CATCH_UP_MS : COMPLETION_CATCH_UP_MS);
+    let frame: number;
+    const tick = (now: number) => {
+      const elapsed = now - lastPaint.current;
+      if (elapsed >= TABLE_FRAME_MS || now >= catchUpBy) {
+        const remaining = total - displayedRef.current;
+        const framesLeft = Math.max(1, Math.ceil((catchUpBy - now) / TABLE_FRAME_MS));
+        publish(Math.min(total, displayedRef.current + Math.max(1, Math.ceil(remaining / framesLeft))));
+        lastPaint.current = now;
+      }
+      if (displayedRef.current < total) frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [total, animate, enabled, streaming]);
+
+  return { count: animate ? displayed : total, isTyping };
 }

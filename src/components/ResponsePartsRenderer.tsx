@@ -4,6 +4,8 @@ import { Alert, Button, Table, notification, type TableColumnsType } from 'antd'
 
 import type { AgentResponseAction, AgentResponsePart, AgentResponsePayload } from '../types';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { useTableTypewriter } from '../hooks/useTypewriter';
+import { formatDisplayValue } from '../utils/displayValue';
 import { TableDisplayFrame, type TableDisplayData } from './TableDisplayFrame';
 
 const MOBILE_PREVIEW_ROW_LIMIT = 3;
@@ -35,6 +37,8 @@ type ResponsePartsRendererProps = {
   onPrompt?: (message: string) => Promise<void>;
   onAction?: (action: AgentResponseAction) => Promise<void>;
   promptDisabled?: boolean;
+  animate?: boolean;
+  streaming?: boolean;
 };
 
 type TableRow = Record<string, unknown> & { __rowKey: string };
@@ -81,27 +85,53 @@ function tableCell(value: unknown, column: ResponseColumn): string {
     (column.data_type === 'decimal' || column.data_type === 'integer')
     && (typeof value === 'string' || (typeof value === 'number' && Number.isFinite(value)))
   ) return displayDecimal(String(value), column.unit);
-  return String(value);
+  return typeof value === 'string' ? formatDisplayValue(value) : String(value);
 }
 
-function TablePart({ part, action, expandable, tableKey }: { part: AgentResponsePart; action?: string; expandable: boolean; tableKey: string }) {
+function TablePart({
+  part,
+  expandable,
+  tableKey,
+  animate,
+  streaming,
+}: {
+  part: AgentResponsePart;
+  expandable: boolean;
+  tableKey: string;
+  animate: boolean;
+  streaming: boolean;
+}) {
   const isMobile = useIsMobile();
   const [expanded, setExpanded] = useState(false);
   const rows = part.preview_rows ?? [];
   const columns = tableColumns(part);
   const collapsedRowLimit = isMobile ? MOBILE_PREVIEW_ROW_LIMIT : DESKTOP_PREVIEW_ROW_LIMIT;
   const canToggleRows = expandable && rows.length > collapsedRowLimit;
-  const visibleRows = canToggleRows && !expanded ? rows.slice(0, collapsedRowLimit) : rows;
+  const targetRows = canToggleRows && !expanded ? rows.slice(0, collapsedRowLimit) : rows;
+  const playback = useTableTypewriter(targetRows.length, animate && !expanded, streaming);
+  const visibleRows = targetRows.slice(0, playback.count);
   const hasCompleteRows = typeof part.row_count !== 'number' || part.row_count <= rows.length;
-  const rowCountLabel = typeof part.row_count === 'number'
-    ? hasCompleteRows ? `${part.row_count} 行` : `当前展示 ${rows.length} / ${part.row_count} 行`
-    : `${rows.length} 行`;
+  const rowCountLabel = playback.isTyping
+    ? `正在逐行展示 ${visibleRows.length} / ${targetRows.length} 行`
+    : canToggleRows
+    ? expanded
+      ? hasCompleteRows ? `已展开全部 ${visibleRows.length} 行` : `当前展示 ${visibleRows.length} / ${part.row_count} 行`
+      : hasCompleteRows ? `默认展示前 ${visibleRows.length} 行，共 ${rows.length} 行` : `当前展示 ${visibleRows.length} / ${part.row_count} 行`
+    : typeof part.row_count === 'number'
+      ? hasCompleteRows ? `${part.row_count} 行` : `当前展示 ${visibleRows.length} / ${part.row_count} 行`
+      : `${rows.length} 行`;
   const dataSource: TableRow[] = visibleRows.map((row, index) => ({ ...row, __rowKey: `${tableKey}-${index}` }));
   const antdColumns: TableColumnsType<TableRow> = columns.map((column) => ({
     title: column.label,
     dataIndex: column.key,
     key: column.key,
-    render: (value: unknown) => tableCell(value, column),
+    minWidth: 112,
+    width: 196,
+    ellipsis: { showTitle: false },
+    render: (value: unknown) => {
+      const displayValue = tableCell(value, column);
+      return <span className="block min-w-[112px] max-w-[280px] truncate" title={displayValue}>{displayValue}</span>;
+    },
   }));
 
   if (columns.length === 0) return null;
@@ -122,19 +152,19 @@ function TablePart({ part, action, expandable, tableKey }: { part: AgentResponse
           className="shrink-0 px-1 text-xs text-blue-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500"
           onClick={() => setExpanded(value => !value)}
         >
-          {expanded ? '收回明细' : action ?? '展开明细'}
+          {expanded ? '收起' : '展开全部'}
         </Button>
       )}
     </>
   );
 
   return (
-    <section className="mt-2" aria-label={part.title || '数据表'}>
+    <section className="structured-table-enter mt-2" aria-label={part.title || '数据表'} aria-busy={playback.isTyping}>
       <TableDisplayFrame
         title={part.title || '数据表'}
         filename={part.title || '数据表'}
-        className="rounded-xl border border-slate-200 bg-white"
-        tableClassName="overflow-x-auto"
+        className="rounded-xl border border-slate-100 bg-white"
+        tableClassName="max-h-[18rem] overflow-auto md:max-h-none"
         exportTables={exportTables}
         toolbarExtra={toolbarExtra}
         showDownload={hasCompleteRows}
@@ -145,7 +175,9 @@ function TablePart({ part, action, expandable, tableKey }: { part: AgentResponse
           rowKey="__rowKey"
           pagination={false}
           size="small"
+          bordered
           scroll={{ x: 'max-content' }}
+          rowClassName={(_row, index) => playback.isTyping && index === visibleRows.length - 1 ? 'structured-table-row-typing' : ''}
         />
       </TableDisplayFrame>
     </section>
@@ -183,7 +215,14 @@ function NoticePart({ part }: { part: AgentResponsePart }) {
   return <Alert title={part.title} description={part.message} type={part.severity} showIcon />;
 }
 
-export function ResponsePartsRenderer({ response, onPrompt, onAction, promptDisabled = false }: ResponsePartsRendererProps) {
+export function ResponsePartsRenderer({
+  response,
+  onPrompt,
+  onAction,
+  promptDisabled = false,
+  animate = false,
+  streaming = false,
+}: ResponsePartsRendererProps) {
   const [pendingActionId, setPendingActionId] = useState<string | null>(null);
   const [notificationApi, notificationContextHolder] = notification.useNotification();
   const payloadActionsBlocked = response.result_status === 'failed' || response.result_status === 'unavailable';
@@ -247,12 +286,16 @@ export function ResponsePartsRenderer({ response, onPrompt, onAction, promptDisa
         }
 
         if (part.kind === 'table') {
-          const action = response.actions?.find((candidate) => (
-            candidate.action_id === 'expand_table'
-            && candidate.kind === 'local'
-            && (candidate.params?.table_id === undefined || candidate.params.table_id === part.table_id)
-          ));
-          return <TablePart key={`table-${part.table_id ?? index}`} part={part} action={action?.label} expandable={!payloadActionsBlocked} tableKey={part.table_id ?? String(index)} />;
+          return (
+            <TablePart
+              key={`table-${part.table_id ?? index}`}
+              part={part}
+              expandable={!payloadActionsBlocked}
+              tableKey={part.table_id ?? String(index)}
+              animate={animate}
+              streaming={streaming}
+            />
+          );
         }
 
         if (part.kind === 'insights') {
