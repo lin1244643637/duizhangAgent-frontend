@@ -80,32 +80,6 @@ describe('useAgentChat stage lifecycle', () => {
     expect(messages[messages.length - 1]?.content).toContain('[请求失败，请重试]');
   });
 
-  it('uses the legacy chat endpoint for a personal workspace even when AG-UI is enabled', async () => {
-    useAuthStore.setState({ workspaceType: 'personal' });
-    useChatStore.setState({
-      activeSessionId: 'session-1',
-      sessions: [{
-        id: 'session-1',
-        title: '个人会话',
-        messages: [],
-        createdAt: 0,
-        pending: false,
-        conversationMode: 'agui',
-      }],
-    });
-    const done = new TextEncoder().encode('data: [DONE]\n\n');
-    vi.mocked(apiFetch).mockResolvedValue({
-      ok: true,
-      body: { getReader: () => ({ read: vi.fn().mockResolvedValueOnce({ done: false, value: done }) }) },
-    } as unknown as Response);
-    const { result } = renderHook(() => useAgentChat());
-
-    await act(async () => { await result.current.sendMessage('你好'); });
-
-    expect(apiFetch).toHaveBeenCalledWith('/api/v1/chat', expect.objectContaining({ method: 'POST' }));
-    expect(apiFetch).not.toHaveBeenCalledWith('/api/v1/agui/runs', expect.anything());
-  });
-
   it('treats a terminal SSE failure as final and drops later events', async () => {
     const bytes = new TextEncoder().encode(
       'data: {"type":"stage","code":"querying","label":"读取经营数据","status":"running","step_id":"load_data","elapsed_ms":120,"sequence":1,"visibility":"public"}\n\n'

@@ -81,6 +81,17 @@ export function ChatWindow() {
   );
   const messages = session?.messages ?? [];
   const isAgui = session?.conversationMode === 'agui';
+  const [liveInsightMessageId, setLiveInsightMessageId] = useState<string | null>(null);
+  useEffect(() => setLiveInsightMessageId(null), [activeSessionId]);
+  useEffect(() => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message.role === 'assistant' && message.agui && message.streaming) {
+        setLiveInsightMessageId(message.id);
+        break;
+      }
+    }
+  }, [messages]);
   const unresolvedAgui = messages.find((message) => message.agui && isAguiUnresolved(message.agui.status));
   const hiddenToolCallIds = useMemo(() => {
     const hidden = new Set<string>();
@@ -461,6 +472,7 @@ export function ChatWindow() {
                     response={msg.agentResponse}
                     animate={isAgui && msg.id === lastMessage?.id}
                     streaming={Boolean(msg.streaming)}
+                    animateInsights={isAgui && liveInsightMessageId === msg.id}
                     onPrompt={async (message) => {
                       const sent = await sendMessage(message);
                       if (sent === false) throw new Error('follow-up prompt send failed');
@@ -506,10 +518,12 @@ export function ChatWindow() {
                       {msg.agui.status === 'failed' ? '回答生成失败' : AGUI_STATUS_LABELS[msg.agui.status]}
                     </p>
                     {msg.agui.status === 'failed' && (
-                      <p className="mt-1 text-xs leading-5 text-slate-600">分析服务未能完成本次请求。你可以重新生成，或稍后再试。</p>
+                      <p className="mt-1 text-xs leading-5 text-slate-600">{msg.agui.retryable
+                        ? '分析服务未能完成本次请求。你可以重新生成，或稍后再试。'
+                        : '请修改查询条件后重新提问。'}</p>
                     )}
                   </div>
-                  {msg.agui.status === 'failed' && retryPrompt && (
+                  {msg.agui.status === 'failed' && msg.agui.retryable && retryPrompt && (
                     <Button
                       autoInsertSpace={false}
                       htmlType="button"

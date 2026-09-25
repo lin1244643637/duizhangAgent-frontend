@@ -268,7 +268,7 @@ describe('ChatWindow streaming performance', () => {
         taskId: 'agui-failed',
         content: '',
         streaming: false,
-        agui: { runId: 'agui-failed', status: 'failed', detail: 'graph_failed' },
+        agui: { runId: 'agui-failed', status: 'failed', detail: '模型服务暂时未响应', retryable: true },
       }],
     }] }); });
     act(() => { useTaskStore.setState({
@@ -284,6 +284,20 @@ describe('ChatWindow streaming performance', () => {
 
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: '重新生成' })); });
     expect(componentMocks.sendMessage).toHaveBeenCalledWith('最近营收如何？', undefined);
+  });
+
+  it('does not offer retry for a deterministic AG-UI failure', () => {
+    act(() => { useChatStore.setState({ sessions: [{
+      id: 'session-1', title: '失败会话', createdAt: 0, conversationMode: 'agui', messages: [userMessage, {
+        ...assistantMessage, content: '', streaming: false,
+        agui: { runId: 'agui-invalid', status: 'failed', detail: '请修改查询条件', retryable: false },
+      }],
+    }] }); });
+
+    render(<ChatWindow />);
+
+    expect(screen.getByText('请修改查询条件后重新提问。')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '重新生成' })).toBeNull();
   });
 
   it('confirms an AG-UI approval before resuming the same run', async () => {
@@ -482,6 +496,37 @@ describe('ChatWindow streaming performance', () => {
     expect(screen.getByText('结构化实收')).toBeTruthy();
     expect(screen.getByText('¥1,234.50')).toBeTruthy();
     expect(screen.getByText('这是兼容旧客户端的文字说明。')).toBeTruthy();
+  });
+
+  it('reveals a live structured insight but shows restored history directly', () => {
+    const insight = {
+      version: 1 as const,
+      domain: 'analytics', task: 'analytics', result_status: 'ok' as const,
+      result_id: 'result-1', source_turn_id: 'turn-1',
+      parts: [{ kind: 'insights', items: [{ statement_type: 'fact' as const, text: '营收下降。', evidence_refs: ['daily'] }] }],
+    };
+    useChatStore.setState({ sessions: [{
+      id: 'session-1', title: '分析会话', createdAt: 0, conversationMode: 'agui',
+      messages: [{ id: 'assistant-live', role: 'assistant', content: '营收下降。', createdAt: 2,
+        streaming: true, agui: { runId: 'run-live', status: 'running' }, agentResponse: insight }],
+    }] });
+    const { container } = render(<ChatWindow />);
+    expect(container.querySelectorAll('.agui-insight-reveal')).toHaveLength(1);
+
+    act(() => useChatStore.setState({ sessions: [{
+      id: 'session-1', title: '分析会话', createdAt: 0, conversationMode: 'agui',
+      messages: [{ id: 'assistant-live', role: 'assistant', content: '营收下降。', createdAt: 2,
+        streaming: false, agui: { runId: 'run-live', status: 'completed' }, agentResponse: insight }],
+    }] }));
+    expect(container.querySelectorAll('.agui-insight-reveal')).toHaveLength(1);
+
+    act(() => useChatStore.setState({
+      activeSessionId: 'session-history',
+      sessions: [{ id: 'session-history', title: '历史会话', createdAt: 0, conversationMode: 'agui',
+        messages: [{ id: 'assistant-history', role: 'assistant', content: '营收下降。', createdAt: 1,
+          streaming: false, agui: { runId: 'run-history', status: 'completed' }, agentResponse: insight }] }],
+    }));
+    expect(container.querySelectorAll('.agui-insight-reveal')).toHaveLength(0);
   });
 
   it('hides same-turn tool cards behind public activity while preserving legacy cards', () => {

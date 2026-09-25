@@ -36,6 +36,7 @@ export interface AguiMessageState {
   runId: string;
   status: AguiStatus;
   detail?: string;
+  retryable?: boolean;
   approval?: AguiApproval;
 }
 

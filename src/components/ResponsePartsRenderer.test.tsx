@@ -47,6 +47,16 @@ describe('ResponsePartsRenderer', () => {
     vi.restoreAllMocks();
   });
 
+  it('shows a clarification as a required action, not a partial analysis', () => {
+    render(<ResponsePartsRenderer response={response({
+      result_status: 'needs_confirmation' as AgentResponsePayload['result_status'],
+      parts: [{ kind: 'clarification', message: '请选择要查询的方向' }],
+    })} />);
+
+    expect(screen.getByText('需要确认')).toBeTruthy();
+    expect(screen.queryByText('结果不完整')).toBeNull();
+  });
+
   it('renders summary metric labels and formatted units', () => {
     render(
       <ResponsePartsRenderer response={response({
@@ -159,7 +169,7 @@ describe('ResponsePartsRenderer', () => {
   });
 
   it.each([
-    ['partial', '结果不完整', false],
+    ['partial', '部分结果可用', false],
     ['empty', '暂无可用数据', false],
     ['unavailable', '数据暂不可用', true],
     ['failed', '分析失败', true],
@@ -401,6 +411,22 @@ describe('ResponsePartsRenderer', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '对比上一周期' }));
     await waitFor(() => expect(onPrompt).toHaveBeenCalledWith('对比该门店上一周期的经营数据'));
+  });
+
+  it('reveals live insight paragraphs while leaving structured tables stable', () => {
+    const { container } = render(<ResponsePartsRenderer response={response({
+      parts: [
+        { kind: 'table', table_id: 'daily', title: '每日营业额', columns: [{ key: 'date', label: '日期' }], preview_rows: [{ date: '2026-09-23' }] },
+        { kind: 'insights', title: '分析结论', items: [
+          { statement_type: 'fact', text: '营业额下降。', evidence_refs: ['daily'] },
+          { statement_type: 'recommendation', text: '核对订单。', evidence_refs: ['daily'] },
+        ] },
+      ],
+    })} animateInsights />);
+
+    expect(container.querySelectorAll('.agui-insight-reveal')).toHaveLength(2);
+    expect(screen.getByRole('table').classList.contains('agui-insight-reveal')).toBe(false);
+    expect(screen.getByText('营业额下降。')).toBeTruthy();
   });
 
   it('renders structured clarification without matching Chinese content', async () => {

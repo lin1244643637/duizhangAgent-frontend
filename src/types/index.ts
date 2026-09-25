@@ -92,7 +92,7 @@ export interface AgentResponsePayload {
   version: 1;
   domain: string;
   task: string;
-  result_status: 'ok' | 'partial' | 'empty' | 'unavailable' | 'failed';
+  result_status: 'ok' | 'partial' | 'empty' | 'unavailable' | 'failed' | 'needs_confirmation';
   result_id: string;
   source_turn_id: string;
   parts: AgentResponsePart[];
@@ -111,7 +111,7 @@ export function parseAgentResponsePayload(value: unknown): AgentResponsePayload 
     typeof value.domain !== 'string'
     || typeof value.task !== 'string'
     || typeof resultStatus !== 'string'
-    || !['ok', 'partial', 'empty', 'unavailable', 'failed'].includes(resultStatus)
+    || !['ok', 'partial', 'empty', 'unavailable', 'failed', 'needs_confirmation'].includes(resultStatus)
     || typeof value.result_id !== 'string'
     || !isNonEmptyString(value.source_turn_id)
     || !Array.isArray(value.parts)

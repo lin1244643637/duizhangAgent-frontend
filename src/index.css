@@ -229,10 +229,12 @@ html, body, #root {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
 }
+.agui-insight-reveal { animation: structured-table-row-in 320ms ease-out both; }
 @media (prefers-reduced-motion: reduce) {
   .chat-jump-latest,
   .structured-table-enter,
-  .structured-table-row-typing { animation: none; }
+  .structured-table-row-typing,
+  .agui-insight-reveal { animation: none; }
 }
 
 .table-fullscreen-content table {

@@ -21,7 +21,8 @@ const UNIT_LABELS: Record<string, string> = {
 };
 
 const RESULT_STATUS_LABELS: Partial<Record<AgentResponsePayload['result_status'], string>> = {
-  partial: '结果不完整',
+  partial: '部分结果可用',
+  needs_confirmation: '需要确认',
   empty: '暂无可用数据',
   unavailable: '数据暂不可用',
   failed: '分析失败',
@@ -39,6 +40,7 @@ type ResponsePartsRendererProps = {
   promptDisabled?: boolean;
   animate?: boolean;
   streaming?: boolean;
+  animateInsights?: boolean;
 };
 
 type TableRow = Record<string, unknown> & { __rowKey: string };
@@ -190,7 +192,7 @@ const insightLabels = {
   recommendation: '建议',
 } as const;
 
-function InsightPart({ part }: { part: AgentResponsePart }) {
+function InsightPart({ part, animate }: { part: AgentResponsePart; animate: boolean }) {
   if (!part.items?.length) return null;
 
   const label = part.title || '经营结论';
@@ -199,7 +201,11 @@ function InsightPart({ part }: { part: AgentResponsePart }) {
       {part.title && <h3 className="mb-2 text-sm font-medium text-slate-700">{part.title}</h3>}
       <ul className="space-y-2 text-sm text-slate-700" aria-label={label}>
         {part.items.map((item, index) => (
-          <li key={`${item.statement_type}-${index}`} className="flex gap-2">
+          <li
+            key={`${item.statement_type}-${index}`}
+            className={`flex gap-2 ${animate ? 'agui-insight-reveal' : ''}`}
+            style={animate ? { animationDelay: `${Math.min(index, 4) * 90}ms` } : undefined}
+          >
             <span className="shrink-0 text-xs font-medium text-slate-500">{insightLabels[item.statement_type]}</span>
             <span>{item.text}</span>
           </li>
@@ -222,6 +228,7 @@ export function ResponsePartsRenderer({
   promptDisabled = false,
   animate = false,
   streaming = false,
+  animateInsights = false,
 }: ResponsePartsRendererProps) {
   const [pendingActionId, setPendingActionId] = useState<string | null>(null);
   const [notificationApi, notificationContextHolder] = notification.useNotification();
@@ -299,7 +306,7 @@ export function ResponsePartsRenderer({
         }
 
         if (part.kind === 'insights') {
-          return <InsightPart key={`insights-${index}`} part={part} />;
+          return <InsightPart key={`insights-${index}`} part={part} animate={animateInsights} />;
         }
 
         if (part.kind === 'notice') {

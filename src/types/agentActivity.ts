@@ -1,5 +1,5 @@
 export type AgentActivityStepStatus = 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
-export type AgentActivityStatus = AgentActivityStepStatus | 'partial' | 'empty' | 'unavailable';
+export type AgentActivityStatus = AgentActivityStepStatus | 'partial' | 'empty' | 'unavailable' | 'needs_confirmation';
 
 export interface AgentActivityStep {
   step_id: string;
@@ -22,7 +22,7 @@ export interface AgentActivity {
 }
 
 const ACTIVITY_STATUSES = new Set<AgentActivityStatus>([
-  'running', 'completed', 'partial', 'empty', 'unavailable', 'failed', 'cancelled', 'interrupted',
+  'running', 'completed', 'partial', 'empty', 'unavailable', 'failed', 'cancelled', 'interrupted', 'needs_confirmation',
 ]);
 
 const STEP_ACTIVITY_STATUSES = new Set<AgentActivityStepStatus>([
@@ -31,7 +31,8 @@ const STEP_ACTIVITY_STATUSES = new Set<AgentActivityStepStatus>([
 
 const TERMINAL_LABELS: Record<Exclude<AgentActivityStatus, 'running'>, string> = {
   completed: '分析活动已完成',
-  partial: '分析结果不完整',
+  partial: '部分结果可用',
+  needs_confirmation: '需要确认',
   empty: '暂无匹配数据',
   unavailable: '数据暂不可用',
   failed: '分析活动失败',

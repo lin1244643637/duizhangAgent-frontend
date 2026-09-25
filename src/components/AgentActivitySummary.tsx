@@ -19,16 +19,17 @@ function formatElapsed(milliseconds: number): string {
 
 function summaryText(activity: AgentActivity, currentLabel: string): string {
   const elapsed = activity.total_duration_ms ?? activity.elapsed_ms;
+  const duration = elapsed > 0 ? ` · ${formatElapsed(elapsed)}` : '';
   if (activity.status === 'completed') {
-    return `已完成 ${activity.steps.length} 项分析活动 · ${formatElapsed(elapsed)}`;
+    return `已完成 ${activity.steps.length} 项分析活动${duration}`;
   }
-  if (activity.status !== 'running') return `${activity.label} · ${formatElapsed(elapsed)}`;
-  return `${currentLabel} · ${formatElapsed(elapsed)}`;
+  if (activity.status !== 'running') return `${activity.label}${duration}`;
+  return `${currentLabel}${duration}`;
 }
 
 function StatusIcon({ status }: Pick<AgentActivity, 'status'>) {
   if (status === 'completed') return <CheckCircleOutlined aria-hidden="true" className="text-emerald-600" />;
-  if (status === 'partial' || status === 'empty') return <CheckCircleOutlined aria-hidden="true" className="text-amber-600" />;
+  if (status === 'partial' || status === 'empty' || status === 'needs_confirmation') return <CheckCircleOutlined aria-hidden="true" className="text-amber-600" />;
   if (status === 'failed') return <CloseCircleOutlined aria-hidden="true" className="text-red-600" />;
   if (status === 'unavailable') return <DisconnectOutlined aria-hidden="true" className="text-slate-600" />;
   if (status === 'cancelled') return <StopOutlined aria-hidden="true" className="text-amber-600" />;
@@ -80,7 +81,7 @@ export function AgentActivitySummary({ activity }: Props) {
                   <span className="block font-medium text-slate-700">{step.label}</span>
                   {step.detail && <span className="mt-0.5 block text-slate-500">{step.detail}</span>}
                 </span>
-                <span className="shrink-0 text-slate-500">{formatElapsed(step.elapsed_ms)}</span>
+                {step.elapsed_ms > 0 && <span className="shrink-0 text-slate-500">{formatElapsed(step.elapsed_ms)}</span>}
               </li>
             ))}
           </ol>

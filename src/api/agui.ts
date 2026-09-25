@@ -24,6 +24,7 @@ export async function* streamAguiRun(
   input: AguiRunInput,
   signal: AbortSignal,
   lastEventId?: string,
+  onSessionId?: (sessionId: string) => void,
 ): AsyncGenerator<AguiEvent> {
   const stream = await apiStreamFetch('/api/v1/agui/runs', {
     method: 'POST',
@@ -37,10 +38,18 @@ export async function* streamAguiRun(
   });
   try {
     const { response } = stream;
-    if (!response.ok) throw new Error(`新对话接口返回 HTTP ${response.status}，请确认后端已启用新架构。`);
+    if (!response.ok) {
+      const payload = response.headers.get('content-type')?.includes('application/json')
+        ? aguiRecord(await response.json().catch(() => null)) : null;
+      const detail = typeof payload?.detail === 'string' ? payload.detail.slice(0, 240) : '';
+      if (response.status === 403) throw new Error(detail || '无权访问当前工作空间，请切换到有权限的空间。');
+      throw new Error(detail || `新对话请求失败（HTTP ${response.status}），请稍后重试。`);
+    }
     if (!response.body || !response.headers.get('content-type')?.includes('text/event-stream')) {
       throw new Error('新对话接口未返回事件流，请确认接口已同步。');
     }
+    const sessionId = response.headers.get('x-agui-session-id');
+    if (sessionId) onSessionId?.(sessionId);
     for await (const raw of readSseData(response.body, stream.signal)) {
       if (stream.signal.aborted) break;
       let event: Record<string, unknown> | null;

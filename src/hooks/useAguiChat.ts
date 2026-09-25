@@ -10,6 +10,7 @@ import { createId } from '../utils/id';
 
 interface RunContext {
   input: AguiRunInput;
+  canonicalSessionId?: string;
   messageId: string;
   seen: Set<string>;
   lastEventId?: string;
@@ -28,19 +29,20 @@ export function useAguiChat() {
   const messageFor = (run: RunContext) => useChatStore.getState().sessions
     .find((session) => session.id === run.input.threadId)?.messages.find((message) => message.id === run.messageId);
 
-  function setStatus(run: RunContext, status: AguiStatus, detail?: string) {
+  function setStatus(run: RunContext, status: AguiStatus, detail?: string, retryable?: boolean) {
     if (!messageFor(run)) return;
     useChatStore.getState().setMessageAgui(run.input.threadId, run.messageId, {
       runId: run.input.runId,
       status,
       ...(detail ? { detail } : {}),
+      ...(retryable !== undefined ? { retryable } : {}),
       ...(run.approval ? { approval: run.approval } : {}),
     });
   }
 
-  function finish(run: RunContext, status: AguiStatus, detail?: string) {
+  function finish(run: RunContext, status: AguiStatus, detail?: string, retryable?: boolean) {
     const store = useChatStore.getState();
-    setStatus(run, status, detail);
+    setStatus(run, status, detail, retryable);
     store.setMessageStreaming(run.input.threadId, run.messageId, false);
     store.setMessageStage(run.input.threadId, run.messageId, null);
     const resultStatus = messageFor(run)?.agentResponse?.result_status;
@@ -139,7 +141,7 @@ export function useAguiChat() {
         break;
       }
       case 'RUN_ERROR':
-        finish(run, 'failed', typeof event.message === 'string' ? event.message.slice(0, 240) : '服务端处理失败');
+        finish(run, 'failed', typeof event.message === 'string' ? event.message.slice(0, 240) : '服务端处理失败', event.retryable === true);
         return true;
       case 'RUN_FINISHED': {
         const outcome = aguiRecord(event.outcome);
@@ -168,7 +170,7 @@ export function useAguiChat() {
     setStatus(run, 'connecting');
     let terminal = false;
     try {
-      for await (const event of streamAguiRun(run.input, controller.signal, run.lastEventId)) {
+      for await (const event of streamAguiRun(run.input, controller.signal, run.lastEventId, (id) => { run.canonicalSessionId = id; })) {
         if (controller.signal.aborted || runs.current.get(run.input.runId) !== run) break;
         if (run.seen.has(event.eventId)) continue;
         terminal = apply(run, event);
@@ -209,6 +211,9 @@ export function useAguiChat() {
       run.controller = undefined;
       const status = messageFor(run)?.agui?.status;
       if (status && !isAguiUnresolved(status)) runs.current.delete(run.input.runId);
+      if (terminal && run.canonicalSessionId && run.canonicalSessionId !== run.input.threadId) {
+        useChatStore.getState().updateSessionId(run.input.threadId, run.canonicalSessionId);
+      }
     }
   }
 

@@ -50,6 +50,17 @@ describe('AgentActivitySummary', () => {
     expect(announcement.textContent).toBe(before);
   });
 
+  it('omits elapsed time when the backend did not measure it', () => {
+    render(<AgentActivitySummary activity={{
+      ...activity,
+      status: 'completed',
+      elapsed_ms: 0,
+      total_duration_ms: undefined,
+    }} />);
+
+    expect(screen.getByRole('button', { name: /已完成 2 项分析活动/ }).textContent).not.toContain('0.0 秒');
+  });
+
   it('shows the latest running stage even when its stable sequence sorts before another step', () => {
     render(<AgentActivitySummary activity={{
       ...activity,
@@ -62,7 +73,7 @@ describe('AgentActivitySummary', () => {
   });
 
   it.each([
-    ['partial', '分析结果不完整'],
+    ['partial', '部分结果可用'],
     ['empty', '暂无匹配数据'],
     ['unavailable', '数据暂不可用'],
     ['failed', '分析活动失败'],

@@ -13,6 +13,7 @@ type ConnectorMessageMetadata = {
   delivery_status?: unknown;
   execution_path?: unknown;
   failure_detail?: unknown;
+  retryable?: unknown;
   run_id?: unknown;
   connector_query?: {
     evidence?: QueryEvidence | null;
@@ -234,6 +235,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 ...(typeof m.metadata.failure_detail === 'string' && m.metadata.failure_detail.trim()
                   ? { detail: m.metadata.failure_detail.trim() }
                   : {}),
+                retryable: m.metadata.retryable === true,
               }
             : undefined;
           return {

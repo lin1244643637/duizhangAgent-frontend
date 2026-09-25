@@ -24,7 +24,7 @@ const textFrames = (input: AguiRunInput) => frame(input, 0, 'RUN_STARTED')
   + frame(input, 1, 'TEXT_MESSAGE_START', { messageId: 'text-1', role: 'assistant' })
   + frame(input, 2, 'TEXT_MESSAGE_CONTENT', { messageId: 'text-1', delta: '你好' });
 
-function mockStream(events: (input: AguiRunInput) => string, hold = false) {
+function mockStream(events: (input: AguiRunInput) => string, hold = false, sessionId?: string) {
   let channel: ReadableStreamDefaultController<Uint8Array>;
   const cancel = vi.fn();
   const release = vi.fn();
@@ -38,7 +38,10 @@ function mockStream(events: (input: AguiRunInput) => string, hold = false) {
         if (!hold) controller.close();
       }, cancel,
     });
-    return { response: new Response(body, { headers: { 'Content-Type': 'text/event-stream' } }), signal: options!.signal as AbortSignal, release };
+    return { response: new Response(body, { headers: {
+      'Content-Type': 'text/event-stream',
+      ...(sessionId ? { 'X-AGUI-Session-ID': sessionId } : {}),
+    } }), signal: options!.signal as AbortSignal, release };
   });
   return { cancel, release, emit: (events: string) => channel.enqueue(new TextEncoder().encode(events)), locked: () => body.locked };
 }
@@ -54,6 +57,18 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllEnvs(); });
 
 describe('AG-UI opt-in conversation', () => {
+  it('uses the same AG-UI endpoint for a personal workspace', async () => {
+    useAuthStore.setState({ workspaceType: 'personal', tenantId: undefined, activeWorkspaceId: undefined });
+    mockStream((input) => frame(input, 0, 'RUN_STARTED') + frame(input, 1, 'RUN_FINISHED'), false, 'personal:personal-a:thread-1');
+    const { result } = renderHook(() => useAgentChat());
+
+    await act(async () => { expect(await result.current.sendMessage('你好')).toBe(true); });
+
+    expect(apiStreamFetch).toHaveBeenCalledWith('/api/v1/agui/runs', expect.anything());
+    expect(apiFetch).not.toHaveBeenCalledWith('/api/v1/chat', expect.anything());
+    expect(useChatStore.getState().sessions[0]?.id).toBe('personal:personal-a:thread-1');
+  });
+
   it('posts the documented shape, deduplicates full event IDs and keeps legacy transports unused', async () => {
     vi.mocked(apiFetch).mockImplementationOnce(async (_url, options) => {
       const input = JSON.parse(options!.body as string) as AguiRunInput;
@@ -149,6 +164,16 @@ describe('AG-UI opt-in conversation', () => {
     expect(stream.cancel).toHaveBeenCalledTimes(1);
     expect(stream.release).toHaveBeenCalledTimes(1);
     expect(notification.error).toHaveBeenCalledWith(expect.objectContaining({ duration: 5, closable: true }));
+  });
+
+  it('keeps the retry decision supplied by RUN_ERROR', async () => {
+    mockStream((input) => frame(input, 0, 'RUN_STARTED')
+      + frame(input, 1, 'RUN_ERROR', { code: 'model_failed', message: '模型暂时不可用', retryable: true }), true);
+    const { result } = renderHook(() => useAgentChat());
+
+    await act(async () => { expect(await result.current.sendMessage('查询')).toBe(false); });
+
+    expect(assistant().agui).toMatchObject({ status: 'failed', retryable: true });
   });
 
   it('reconnects an incomplete run using the identical request and last applied cursor', async () => {
