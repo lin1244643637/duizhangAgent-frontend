@@ -104,6 +104,58 @@ describe('chatStore structured agent responses', () => {
     });
   });
 
+  it('restores a failed deterministic graph turn with its original question', async () => {
+    useChatStore.setState({
+      sessions: [{ id: 'session-1', title: '花名册查询', messages: [], createdAt: 0, loaded: false }],
+      activeSessionId: 'session-1',
+    });
+    mocks.apiFetch.mockResolvedValueOnce({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        session_id: 'session-1', title: '花名册查询',
+        messages: [
+          { id: 'user-1', role: 'user', content: '凤城十二路店有哪些员工', created_at: '2026-09-28T10:00:00+08:00' },
+          { id: 'assistant-1', role: 'assistant', content: '', task_id: 'run-hr', created_at: '2026-09-28T10:00:01+08:00',
+            metadata: { delivery_status: 'failed', execution_path: 'deterministic_graph', run_id: 'run-hr',
+              failure_reason: 'invalid_hr_query', failure_detail: '请修改花名册查询条件后重试。', retryable: false } },
+        ],
+      }),
+    });
+
+    await useChatStore.getState().loadSessionHistory('session-1');
+
+    const messages = useChatStore.getState().sessions[0]?.messages ?? [];
+    expect(messages).toHaveLength(2);
+    expect(messages[0]?.content).toBe('凤城十二路店有哪些员工');
+    expect(messages[1]?.agui).toEqual({
+      runId: 'run-hr', status: 'failed', detail: '请修改花名册查询条件后重试。', retryable: false,
+    });
+  });
+
+  it('restores a cancelled deterministic graph turn', async () => {
+    useChatStore.setState({
+      sessions: [{ id: 'session-1', title: '花名册查询', messages: [], createdAt: 0, loaded: false }],
+      activeSessionId: 'session-1',
+    });
+    mocks.apiFetch.mockResolvedValueOnce({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        session_id: 'session-1', title: '花名册查询',
+        messages: [
+          { id: 'user-1', role: 'user', content: '查询员工', created_at: '2026-09-28T10:00:00+08:00' },
+          { id: 'assistant-1', role: 'assistant', content: '', task_id: 'run-cancelled', created_at: '2026-09-28T10:00:01+08:00',
+            metadata: { delivery_status: 'cancelled', execution_path: 'deterministic_graph', run_id: 'run-cancelled' } },
+        ],
+      }),
+    });
+
+    await useChatStore.getState().loadSessionHistory('session-1');
+
+    expect(useChatStore.getState().sessions[0]?.messages[1]?.agui).toMatchObject({
+      runId: 'run-cancelled', status: 'cancelled',
+    });
+  });
+
   it('restores a completed bounded ReAct reply as an AG-UI message', async () => {
     useChatStore.setState({
       sessions: [{ id: 'session-1', title: '经营分析历史', messages: [], createdAt: 0, loaded: false }],

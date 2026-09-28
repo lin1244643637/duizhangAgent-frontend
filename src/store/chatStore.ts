@@ -226,8 +226,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           const runId = typeof m.metadata?.run_id === 'string' ? m.metadata.run_id : m.task_id;
           const deliveryStatus = m.metadata?.delivery_status;
           const agui: AguiMessageState | undefined = m.role === 'assistant'
-            && (m.metadata?.execution_path === 'general_graph' || m.metadata?.execution_path === 'bounded_react')
-            && (deliveryStatus === 'completed' || deliveryStatus === 'failed')
+            && (m.metadata?.execution_path === 'general_graph' || m.metadata?.execution_path === 'bounded_react' || m.metadata?.execution_path === 'deterministic_graph')
+            && (deliveryStatus === 'completed' || deliveryStatus === 'failed' || deliveryStatus === 'cancelled')
             && typeof runId === 'string'
             ? {
                 runId,
