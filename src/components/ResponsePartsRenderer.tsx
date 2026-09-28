@@ -76,7 +76,7 @@ function tableColumns(part: AgentResponsePart): ResponseColumn[] {
 }
 
 function tableCell(value: unknown, column: ResponseColumn): string {
-  if (value == null) return '—';
+  if (value == null || (typeof value === 'string' && value.trim() === '')) return '—';
   if (column.key === 'comparison_status' && typeof value === 'string') {
     const label = COMPARISON_STATUS_LABELS[value];
     if (label) return label;
@@ -117,10 +117,10 @@ function TablePart({
     ? `正在逐行展示 ${visibleRows.length} / ${targetRows.length} 行`
     : canToggleRows
     ? expanded
-      ? hasCompleteRows ? `已展开全部 ${visibleRows.length} 行` : `当前展示 ${visibleRows.length} / ${part.row_count} 行`
-      : hasCompleteRows ? `默认展示前 ${visibleRows.length} 行，共 ${rows.length} 行` : `当前展示 ${visibleRows.length} / ${part.row_count} 行`
+      ? hasCompleteRows ? `已展开全部 ${visibleRows.length} 行` : `已展开预览 ${visibleRows.length} 行，共 ${part.row_count} 行`
+      : hasCompleteRows ? `默认展示前 ${visibleRows.length} 行，共 ${rows.length} 行` : `当前仅预览 ${visibleRows.length} 行，共 ${part.row_count} 行`
     : typeof part.row_count === 'number'
-      ? hasCompleteRows ? `${part.row_count} 行` : `当前展示 ${visibleRows.length} / ${part.row_count} 行`
+      ? hasCompleteRows ? `${part.row_count} 行` : `当前仅预览 ${visibleRows.length} 行，共 ${part.row_count} 行`
       : `${rows.length} 行`;
   const dataSource: TableRow[] = visibleRows.map((row, index) => ({ ...row, __rowKey: `${tableKey}-${index}` }));
   const antdColumns: TableColumnsType<TableRow> = columns.map((column) => ({

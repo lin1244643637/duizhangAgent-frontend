@@ -216,12 +216,32 @@ describe('ResponsePartsRenderer', () => {
     );
 
     expect(screen.getByText('每日销售')).toBeTruthy();
-    expect(screen.getByText('当前展示 2 / 31 行')).toBeTruthy();
+    expect(screen.getByText('当前仅预览 2 行，共 31 行')).toBeTruthy();
     expect(screen.queryByTitle('下载表格')).toBeNull();
     expect(screen.getByTitle('全屏展示')).toBeTruthy();
     expect(screen.getByText('2026-08-01')).toBeTruthy();
     expect(screen.getByText('¥1,234.50')).toBeTruthy();
     expect(screen.getByText('2026-08-02')).toBeTruthy();
+  });
+
+  it('keeps zero and false while marking missing and empty table cells consistently', () => {
+    render(<ResponsePartsRenderer response={response({
+      parts: [{
+        kind: 'table',
+        title: '审批明细',
+        columns: [
+          { key: 'missing', label: '缺失' },
+          { key: 'empty', label: '空字符串' },
+          { key: 'zero', label: '金额' },
+          { key: 'false', label: '复核' },
+        ],
+        preview_rows: [{ empty: '', zero: 0, false: false }],
+      }],
+    })} />);
+
+    expect(screen.getAllByText('—')).toHaveLength(2);
+    expect(screen.getByText('0')).toBeTruthy();
+    expect(screen.getByText('false')).toBeTruthy();
   });
 
   it('uses the shared business table actions when all structured rows are available', () => {
