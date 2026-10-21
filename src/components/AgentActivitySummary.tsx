@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
@@ -46,10 +46,7 @@ export function AgentActivitySummary({ activity }: Props) {
   const currentLabel = currentStep?.label ?? activity.label;
   const summary = summaryText(activity, currentLabel);
   const [expanded, setExpanded] = useState(false);
-  const announcement = useMemo(
-    () => `${activity.status}:${currentStep?.step_id ?? ''}:${currentLabel}`,
-    [activity.status, currentLabel, currentStep?.step_id],
-  );
+  const announcement = activity.status === 'running' ? currentLabel : activity.label;
 
   useEffect(() => {
     if (activity.status !== 'running') setExpanded(false);

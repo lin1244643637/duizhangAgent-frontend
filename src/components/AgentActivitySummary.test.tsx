@@ -50,6 +50,36 @@ describe('AgentActivitySummary', () => {
     expect(announcement.textContent).toBe(before);
   });
 
+  it.each([
+    ['running', '读取销售数据'],
+    ['completed', '分析活动已完成'],
+    ['partial', '部分结果可用'],
+    ['empty', '暂无匹配数据'],
+    ['unavailable', '数据暂不可用'],
+    ['failed', '分析活动失败'],
+    ['cancelled', '分析活动已停止'],
+    ['interrupted', '分析活动已中断'],
+    ['needs_confirmation', '需要确认'],
+  ] as const)('announces a public Chinese label for %s without internal identifiers', (status, label) => {
+    render(<AgentActivitySummary activity={{
+      ...activity,
+      status,
+      label,
+      steps: [{
+        step_id: 'agui:call_internal-843',
+        label: '读取销售数据',
+        status: status === 'running' ? 'running' : 'completed',
+        elapsed_ms: 100,
+        sequence: 1,
+      }],
+    }} />);
+
+    const announcement = screen.getByRole('status');
+    expect(announcement.textContent).toBe(label);
+    expect(announcement.textContent).not.toContain(status);
+    expect(announcement.textContent).not.toContain('agui:call_');
+  });
+
   it('omits elapsed time when the backend did not measure it', () => {
     render(<AgentActivitySummary activity={{
       ...activity,
